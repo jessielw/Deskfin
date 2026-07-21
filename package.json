@@ -1,0 +1,45 @@
+{
+  "name": "Deskfin",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "A thin Jellyfin desktop client with Web and MPV playback",
+  "main": "build/main/index.js",
+  "scripts": {
+    "build:code": "tsc -p tsconfig.json",
+    "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload.js && esbuild src/preload/settings.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/settings-preload.js",
+    "build": "npm run build:code && npm run build:preload",
+    "prestart": "npm run build",
+    "start": "electron .",
+    "prestart:web": "npm run build",
+    "start:web": "electron . --mode web",
+    "prestart:mpv": "npm run build",
+    "start:mpv": "electron . --mode mpv",
+    "presmoke:mpv": "npm run build:code",
+    "smoke:mpv": "node scripts/mpv-smoke.js",
+    "presmoke:settings": "npm run build",
+    "smoke:settings": "electron . --smoke-settings",
+    "presmoke:switch": "npm run build",
+    "smoke:switch": "electron . --smoke-switch",
+    "check:types": "tsc -p tsconfig.json --noEmit",
+    "check:js": "node --check src/preload/install-player.js && node --check src/renderer/settings/settings.js && node --check scripts/mpv-smoke.js",
+    "check": "npm run check:types && npm run check:js",
+    "pretest": "npm run build:code",
+    "test": "node --test",
+    "validate": "npm run check && npm test",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "electron": "43.1.1",
+    "esbuild": "0.28.1",
+    "prettier": "3.9.6",
+    "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  }
+}
