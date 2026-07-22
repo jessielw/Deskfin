@@ -1,0 +1,116 @@
+export type PlaybackMode = "web" | "mpv";
+export type MpvPresentation = "jellyfin" | "user";
+
+export interface ServerProfile {
+  id: string;
+  name: string;
+  url: string;
+  version?: string;
+}
+
+export interface AppSettings {
+  version: number;
+  playbackMode: PlaybackMode;
+  startMpvFullscreen: boolean;
+  mpvPresentation: MpvPresentation;
+  servers: ServerProfile[];
+  activeServerId?: string;
+  mpvPath?: string;
+}
+
+export interface SettingsSnapshot {
+  playbackMode: PlaybackMode;
+  startMpvFullscreen: boolean;
+  mpvPresentation: MpvPresentation;
+  mpvPath: string;
+  appVersion: string;
+}
+
+export interface ServerManagerSnapshot {
+  servers: ServerProfile[];
+  canClose: boolean;
+  activeServerId?: string;
+  connectionError?: string;
+  statusMessage?: string;
+  appVersion: string;
+}
+
+export interface SaveServerRequest {
+  url: string;
+  replacingId?: string;
+}
+
+export interface MpvLoadRequest {
+  url: string;
+  startSeconds: number;
+  title: string;
+  fullscreen: boolean;
+  audioTrack: number;
+  subtitleTrack: number;
+  externalAudioUrl: string | null;
+  externalSubtitleUrl: string | null;
+}
+
+export interface MpvStatus {
+  backend: PlaybackMode;
+  available: boolean;
+  ready: boolean;
+  executable: string;
+  presentation: MpvPresentation;
+  reason: string;
+  startFullscreen?: boolean;
+}
+
+export type MpvEventName =
+  | "ready"
+  | "loaded"
+  | "paused"
+  | "position"
+  | "duration"
+  | "volume"
+  | "muted"
+  | "rate"
+  | "fullscreen"
+  | "audioTrack"
+  | "subtitleTrack"
+  | "next"
+  | "previous"
+  | "ended"
+  | "quit"
+  | "failed"
+  | "mode";
+
+export type MpvEventPayload = Record<string, unknown>;
+
+export interface DesktopBridge {
+  status(): Promise<MpvStatus>;
+  load(request: unknown): Promise<boolean>;
+  play(): Promise<boolean>;
+  pause(): Promise<boolean>;
+  stop(): Promise<boolean>;
+  seek(seconds: number): Promise<boolean>;
+  setVolume(volume: number): Promise<boolean>;
+  setMuted(muted: boolean): Promise<boolean>;
+  setRate(rate: number): Promise<boolean>;
+  setAudioTrack(track: number): Promise<boolean>;
+  setSubtitleTrack(track: number): Promise<boolean>;
+  setFullscreen(fullscreen: boolean): Promise<boolean>;
+  focusApp(): Promise<boolean>;
+  playHere(url: string): Promise<boolean>;
+  openExternal(url: string): Promise<boolean>;
+  on(name: MpvEventName, callback: (payload: MpvEventPayload) => void): void;
+}
+
+export interface SettingsBridge {
+  load(): Promise<SettingsSnapshot>;
+  save(settings: unknown): Promise<SettingsSnapshot>;
+  browseMpv(): Promise<string | null>;
+}
+
+export interface ServerManagerBridge {
+  load(): Promise<ServerManagerSnapshot>;
+  save(request: unknown): Promise<ServerManagerSnapshot>;
+  activate(serverId: string): Promise<ServerManagerSnapshot>;
+  remove(serverId: string): Promise<ServerManagerSnapshot>;
+  onChanged(callback: (snapshot: ServerManagerSnapshot) => void): void;
+}
