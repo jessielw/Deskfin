@@ -54,6 +54,7 @@ import type {
 
 const APP_NAME = "Deskfin";
 const LOG_PREFIX = `[${APP_NAME}]`;
+const isPrimaryInstance = app.requestSingleInstanceLock();
 const smokeSwitch = process.argv.includes("--smoke-switch");
 const smokeSettings = process.argv.includes("--smoke-settings");
 const smokeServers = process.argv.includes("--smoke-servers");
@@ -82,6 +83,8 @@ let serversPreloadPath: string | null = null;
 let settingsPath: string | null = null;
 let persistedSettings: AppSettings = normalizeSettings();
 let serverStatusMessage: string | null = null;
+
+if (!isPrimaryInstance) app.quit();
 
 interface PersistRuntimeOptions {
   includeMode?: boolean;
@@ -146,6 +149,32 @@ function isPlaybackMode(value: unknown): value is PlaybackMode {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function focusExistingInstance(): void {
+  const candidates = [
+    BrowserWindow.getFocusedWindow(),
+    serversWindow,
+    settingsWindow,
+    mainWindow,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || candidate.isDestroyed()) continue;
+    if (candidate.isMinimized()) candidate.restore();
+    if (!candidate.isVisible()) continue;
+    candidate.show();
+    candidate.focus();
+    return;
+  }
+
+  // A hidden window may still be loading. Its normal ready handler will show it
+  // without exposing a blank renderer.
+  if (candidates.some((candidate) => candidate && !candidate.isDestroyed())) {
+    return;
+  }
+  if (!app.isReady()) return;
+  if (serverUrl) openMainWindow();
+  else showServersWindow();
 }
 
 function commandLineOption(name: string): string | null {
@@ -1210,13 +1239,19 @@ app.on("before-quit", () => {
 });
 
 app.on("activate", () => {
+  if (!isPrimaryInstance) return;
   if (BrowserWindow.getAllWindows().length === 0) {
     if (serverUrl) openMainWindow();
     else showServersWindow();
   }
 });
 
+if (isPrimaryInstance) {
+  app.on("second-instance", () => focusExistingInstance());
+}
+
 app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return;
   initializeRuntime();
   session.defaultSession.setPermissionRequestHandler(
     (_webContents, _permission, callback) => {
