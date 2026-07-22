@@ -4,13 +4,13 @@ import {
   dialog,
   ipcMain,
   Menu,
+  screen,
   shell,
   session,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
-  type Rectangle,
 } from "electron";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -23,6 +23,14 @@ import {
   validateJellyfinServer,
   type JellyfinServerHealth,
 } from "./server-health";
+import {
+  loadWindowState,
+  resolveWindowState,
+  saveWindowState,
+  WINDOW_STATE_VERSION,
+  type WindowBounds,
+  type WindowState,
+} from "./window-state";
 import {
   resolveMpvIntegrationScript,
   resolvePreloadPath,
@@ -54,6 +62,11 @@ import type {
 
 const APP_NAME = "Deskfin";
 const LOG_PREFIX = `[${APP_NAME}]`;
+const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
+const MAIN_WINDOW_DEFAULT_HEIGHT = 800;
+const MAIN_WINDOW_MIN_WIDTH = 640;
+const MAIN_WINDOW_MIN_HEIGHT = 480;
+const WINDOW_STATE_SAVE_DELAY_MS = 250;
 const isPrimaryInstance = app.requestSingleInstanceLock();
 const smokeSwitch = process.argv.includes("--smoke-switch");
 const smokeSettings = process.argv.includes("--smoke-settings");
@@ -81,7 +94,10 @@ let settingsPreloadPath: string | null = null;
 let serversPagePath: string | null = null;
 let serversPreloadPath: string | null = null;
 let settingsPath: string | null = null;
+let windowStatePath: string | null = null;
 let persistedSettings: AppSettings = normalizeSettings();
+let persistedWindowState: WindowState | null = null;
+let windowStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let serverStatusMessage: string | null = null;
 
 if (!isPrimaryInstance) app.quit();
@@ -96,7 +112,7 @@ interface CreateWindowOptions {
   mode?: PlaybackMode;
   targetUrl?: string;
   showWhenReady?: boolean;
-  bounds?: Rectangle | null;
+  bounds?: WindowBounds | null;
 }
 
 interface CreatedWindow {
@@ -177,6 +193,74 @@ function focusExistingInstance(): void {
   else showServersWindow();
 }
 
+function restorableWindowState(): WindowState | null {
+  return resolveWindowState(
+    persistedWindowState,
+    screen.getAllDisplays().map((display) => display.workArea),
+    {
+      minWidth: MAIN_WINDOW_MIN_WIDTH,
+      minHeight: MAIN_WINDOW_MIN_HEIGHT,
+    },
+  );
+}
+
+function captureWindowState(window: BrowserWindow): WindowState {
+  return {
+    version: WINDOW_STATE_VERSION,
+    bounds: window.getNormalBounds(),
+    maximized: window.isMaximized(),
+    fullscreen: window.isFullScreen(),
+  };
+}
+
+function persistMainWindowState(window: BrowserWindow): void {
+  if (mainWindow !== window || window.isDestroyed() || !windowStatePath) return;
+  try {
+    persistedWindowState = saveWindowState(
+      windowStatePath,
+      captureWindowState(window),
+    );
+  } catch (error: unknown) {
+    console.warn(
+      `${LOG_PREFIX} Could not save window state ${windowStatePath}:`,
+      errorMessage(error),
+    );
+  }
+}
+
+function scheduleWindowStateSave(window: BrowserWindow): void {
+  if (windowStateSaveTimer) clearTimeout(windowStateSaveTimer);
+  windowStateSaveTimer = setTimeout(() => {
+    windowStateSaveTimer = null;
+    persistMainWindowState(window);
+  }, WINDOW_STATE_SAVE_DELAY_MS);
+}
+
+function trackMainWindowState(window: BrowserWindow): void {
+  window.on("move", () => scheduleWindowStateSave(window));
+  window.on("resize", () => scheduleWindowStateSave(window));
+  window.on("maximize", () => scheduleWindowStateSave(window));
+  window.on("unmaximize", () => scheduleWindowStateSave(window));
+  window.on("enter-full-screen", () => scheduleWindowStateSave(window));
+  window.on("leave-full-screen", () => scheduleWindowStateSave(window));
+  window.on("close", () => {
+    if (windowStateSaveTimer) {
+      clearTimeout(windowStateSaveTimer);
+      windowStateSaveTimer = null;
+    }
+    persistMainWindowState(window);
+  });
+}
+
+function restoreMainWindowDisplayState(
+  window: BrowserWindow,
+  state: WindowState | null,
+): void {
+  if (!state) return;
+  if (state.maximized) window.maximize();
+  if (state.fullscreen) window.setFullScreen(true);
+}
+
 function commandLineOption(name: string): string | null {
   const exact = `--${name}`;
   const prefix = `${exact}=`;
@@ -225,7 +309,9 @@ function refreshMpvExecutable(): void {
 
 function initializeRuntime(): void {
   settingsPath = path.join(app.getPath("userData"), "settings.json");
+  windowStatePath = path.join(app.getPath("userData"), "window-state.json");
   persistedSettings = loadSettings(settingsPath);
+  persistedWindowState = loadWindowState(windowStatePath);
   const rawServerUrl =
     commandLineOption("server-url") ||
     process.env.JELLYFIN_DC_SERVER_URL ||
@@ -555,10 +641,14 @@ function runServersSmoke(): void {
   });
 }
 
-function openMainWindow(bounds: Rectangle | null = null): CreatedWindow | null {
+function openMainWindow(
+  windowState: WindowState | null = restorableWindowState(),
+): CreatedWindow | null {
   if (!serverUrl) return null;
-  const created = createWindow({ bounds });
+  const created = createWindow({ bounds: windowState?.bounds });
   mainWindow = created.window;
+  restoreMainWindowDisplayState(created.window, windowState);
+  trackMainWindowState(created.window);
   installMenu();
   created.ready
     .then(() => {
@@ -625,12 +715,12 @@ async function confirmServerSwitch(): Promise<void> {
   await mpvController.execute("stop");
 }
 
-function scheduleActiveServerWindow(bounds: Rectangle | null): void {
+function scheduleActiveServerWindow(windowState: WindowState | null): void {
   setTimeout(() => {
     const oldWindow =
       mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
     closeMpvController();
-    const created = openMainWindow(bounds);
+    const created = openMainWindow(windowState);
     if (!created) {
       connectionError = "The selected Jellyfin server could not be opened.";
       serverStatusMessage = null;
@@ -680,9 +770,11 @@ async function activateValidatedServer(
       mainWindow?.focus();
     }, 0);
   } else {
-    const bounds =
-      mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null;
-    scheduleActiveServerWindow(bounds);
+    const windowState =
+      mainWindow && !mainWindow.isDestroyed()
+        ? captureWindowState(mainWindow)
+        : restorableWindowState();
+    scheduleActiveServerWindow(windowState);
   }
   return serversSnapshot();
 }
@@ -1158,9 +1250,12 @@ function createWindow({
     `--jdc-app-version=${encodeURIComponent(app.getVersion())}`,
   ];
   const window = new BrowserWindow({
-    ...(bounds || { width: 1280, height: 800 }),
-    minWidth: 640,
-    minHeight: 480,
+    ...(bounds || {
+      width: MAIN_WINDOW_DEFAULT_WIDTH,
+      height: MAIN_WINDOW_DEFAULT_HEIGHT,
+    }),
+    minWidth: MAIN_WINDOW_MIN_WIDTH,
+    minHeight: MAIN_WINDOW_MIN_HEIGHT,
     show: false,
     title: `${APP_NAME} - ${mode.toUpperCase()}`,
     webPreferences: {
@@ -1235,6 +1330,9 @@ function createWindow({
 
 app.on("before-quit", () => {
   quitting = true;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    persistMainWindowState(mainWindow);
+  }
   closeMpvController();
 });
 
