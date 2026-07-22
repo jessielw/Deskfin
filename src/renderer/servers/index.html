@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deskfin Servers</title>
+    <link rel="stylesheet" href="servers.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="eyebrow">Deskfin</span>
+        <h1 id="heading">Connect to Jellyfin</h1>
+        <p id="intro">
+          Enter the address of the Jellyfin server you want to use.
+        </p>
+      </header>
+
+      <p id="status" role="status" aria-live="polite"></p>
+
+      <section id="server-section" hidden>
+        <div id="server-list" aria-label="Saved Jellyfin servers"></div>
+        <button id="show-add" class="secondary wide" type="button">
+          Add another server
+        </button>
+      </section>
+
+      <form id="server-form">
+        <label for="server-url">Jellyfin server address</label>
+        <input
+          id="server-url"
+          name="serverUrl"
+          type="text"
+          inputmode="url"
+          autocomplete="url"
+          placeholder="http://server:8096"
+          spellcheck="false"
+          required
+        />
+        <small>The address may include a reverse-proxy base path.</small>
+        <div class="form-actions">
+          <button id="cancel-edit" class="secondary" type="button" hidden>
+            Cancel
+          </button>
+          <button id="connect" type="submit">Connect</button>
+        </div>
+      </form>
+
+      <footer>
+        <span id="version"></span>
+        <button id="close" class="quiet" type="button" hidden>Close</button>
+      </footer>
+    </main>
+    <script src="servers.js"></script>
+  </body>
+</html>

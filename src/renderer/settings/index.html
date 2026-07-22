@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deskfin Settings</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Settings</h1>
+        <p>
+          Jellyfin Web handles your accounts and login. These preferences apply
+          to every server saved in Deskfin.
+        </p>
+      </header>
+
+      <form id="settings-form">
+        <label class="field" for="playback-mode">
+          <span>Video player</span>
+          <select id="playback-mode" name="playbackMode">
+            <option value="web">Jellyfin Web</option>
+            <option value="mpv">External MPV</option>
+          </select>
+        </label>
+
+        <section id="mpv-settings" aria-labelledby="mpv-heading">
+          <h2 id="mpv-heading">MPV</h2>
+
+          <label class="field" for="mpv-path">
+            <span>Executable</span>
+            <span class="path-row">
+              <input
+                id="mpv-path"
+                name="mpvPath"
+                type="text"
+                placeholder="mpv on PATH"
+                spellcheck="false"
+              />
+              <button id="browse-mpv" class="secondary" type="button">
+                Browse
+              </button>
+            </span>
+            <small
+              >Leave blank to use <code>mpv</code> from the system PATH.</small
+            >
+          </label>
+
+          <label class="field" for="mpv-presentation">
+            <span>Controls</span>
+            <select id="mpv-presentation" name="mpvPresentation">
+              <option value="jellyfin">Deskfin preset</option>
+              <option value="user">Use my MPV configuration</option>
+            </select>
+          </label>
+
+          <label class="check" for="mpv-fullscreen">
+            <input
+              id="mpv-fullscreen"
+              name="startMpvFullscreen"
+              type="checkbox"
+            />
+            <span>Start MPV fullscreen</span>
+          </label>
+        </section>
+
+        <p id="status" role="status" aria-live="polite"></p>
+
+        <footer>
+          <span id="version"></span>
+          <span class="actions">
+            <button id="cancel" class="secondary" type="button">Cancel</button>
+            <button id="save" type="submit">Save</button>
+          </span>
+        </footer>
+      </form>
+    </main>
+    <script src="settings.js"></script>
+  </body>
+</html>
