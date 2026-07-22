@@ -50,7 +50,6 @@ async function main() {
   } finally {
     controller.close();
   }
-  
 }
 
 main().catch((error) => {
