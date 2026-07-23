@@ -983,6 +983,12 @@ function runPackagedSmoke(): void {
           `External application icon resource is missing: ${appIconPath}`,
         );
       }
+      const deskfinLicensePath = path.join(process.resourcesPath, "LICENSE");
+      if (!fs.existsSync(deskfinLicensePath)) {
+        throw new Error(
+          `External Deskfin license is missing: ${deskfinLicensePath}`,
+        );
+      }
 
       const report = (await window.webContents.executeJavaScript(`(async () => {
         const snapshot = await window.serverManagerApi.load();

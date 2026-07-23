@@ -33,6 +33,11 @@ export async function packageDeskfin() {
       "Runtime dependencies require an explicit packaged node_modules policy",
     );
   }
+  if (Object.keys(packageJson.optionalDependencies || {}).length > 0) {
+    throw new Error(
+      "Optional dependencies require an explicit packaged node_modules policy",
+    );
+  }
   const iconDirectory = path.join(projectRoot, "resources", "icons");
   const iconPath =
     process.platform === "win32"
@@ -48,7 +53,7 @@ export async function packageDeskfin() {
     appBundleId: product.appId,
     helperBundleId: `${product.appId}.helper`,
     appCategoryType: product.category,
-    appCopyright: `Copyright © ${new Date().getUTCFullYear()} Deskfin contributors`,
+    appCopyright: `Copyright (c) ${new Date().getUTCFullYear()} Deskfin contributors`,
     icon: iconPath,
     win32metadata: {
       CompanyName: "Deskfin contributors",
@@ -67,6 +72,7 @@ export async function packageDeskfin() {
     extraResource: [
       path.join(projectRoot, "resources", "icons"),
       path.join(projectRoot, "resources", "mpv"),
+      path.join(projectRoot, "LICENSE"),
     ],
     ignore: [
       /[\\/]\.agents(?:[\\/]|$)/,
