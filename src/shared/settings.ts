@@ -49,11 +49,16 @@ function normalizeServerProfile(value: unknown): ServerProfile | null {
     const url = normalizeServerUrl(value.url);
     const rawId = typeof value.id === "string" ? value.id.trim() : "";
     const rawName = typeof value.name === "string" ? value.name.trim() : "";
+    const displayName =
+      typeof value.displayName === "string"
+        ? value.displayName.trim().slice(0, 80)
+        : "";
     const profile: ServerProfile = {
       id: rawId || legacyServerId(url),
       name: rawName || defaultServerName(url),
       url,
     };
+    if (displayName) profile.displayName = displayName;
     if (typeof value.version === "string" && value.version.trim()) {
       profile.version = value.version.trim();
     }
@@ -161,6 +166,19 @@ export function removeServer(
       ? servers[0]?.id
       : settings.activeServerId;
   return normalizeSettings({ ...settings, servers, activeServerId });
+}
+
+export function updateServerDisplayName(
+  settings: AppSettings,
+  serverId: string,
+  displayName: string,
+): AppSettings {
+  const servers = settings.servers.map((profile) =>
+    profile.id === serverId
+      ? { ...profile, displayName: displayName.trim() || undefined }
+      : profile,
+  );
+  return normalizeSettings({ ...settings, servers });
 }
 
 export function loadSettings(
