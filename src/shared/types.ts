@@ -1,5 +1,22 @@
 export type PlaybackMode = "web" | "mpv";
 export type MpvPresentation = "jellyfin" | "user";
+export type MpvExecutableSource =
+  | "command-line"
+  | "environment"
+  | "settings"
+  | "path"
+  | "common"
+  | "unresolved";
+
+export interface MpvDiagnostic {
+  available: boolean;
+  executable: string;
+  source: MpvExecutableSource;
+  version: string | null;
+  versionLine: string | null;
+  reason: string;
+  configuredPathIgnored: boolean;
+}
 
 export interface ServerProfile {
   id: string;
@@ -23,6 +40,7 @@ export interface SettingsSnapshot {
   startMpvFullscreen: boolean;
   mpvPresentation: MpvPresentation;
   mpvPath: string;
+  mpvDiagnostic: MpvDiagnostic;
   appVersion: string;
 }
 
@@ -58,6 +76,8 @@ export interface MpvStatus {
   executable: string;
   presentation: MpvPresentation;
   reason: string;
+  source?: MpvExecutableSource;
+  version?: string | null;
   startFullscreen?: boolean;
 }
 
@@ -107,6 +127,7 @@ export interface SettingsBridge {
   load(): Promise<SettingsSnapshot>;
   save(settings: unknown): Promise<SettingsSnapshot>;
   browseMpv(): Promise<string | null>;
+  testMpv(path: string): Promise<MpvDiagnostic>;
 }
 
 export interface ServerManagerBridge {

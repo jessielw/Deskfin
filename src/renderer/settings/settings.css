@@ -120,6 +120,45 @@ code {
   gap: 8px;
 }
 
+.mpv-diagnostic {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #3b3f4b;
+  border-radius: 8px;
+  background: #15171d;
+}
+
+.mpv-diagnostic span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mpv-diagnostic strong,
+.mpv-diagnostic small {
+  overflow-wrap: anywhere;
+}
+
+.mpv-diagnostic[data-kind="success"] {
+  border-color: rgb(82 167 108 / 65%);
+}
+
+.mpv-diagnostic[data-kind="success"] strong {
+  color: #9cddb0;
+}
+
+.mpv-diagnostic[data-kind="error"] {
+  border-color: rgb(201 96 91 / 65%);
+}
+
+.mpv-diagnostic[data-kind="error"] strong {
+  color: #ffb4ab;
+}
+
 .check {
   display: flex;
   align-items: center;

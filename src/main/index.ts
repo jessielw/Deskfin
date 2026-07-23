@@ -18,7 +18,11 @@ import {
   MpvController,
   normalizeMpvPresentation,
 } from "./playback/mpv-controller";
-import { resolveMpvExecutable } from "./playback/mpv-resolution";
+import { inspectMpvExecutable } from "./playback/mpv-diagnostics";
+import {
+  resolveMpvExecutable,
+  type MpvExecutableResolution,
+} from "./playback/mpv-resolution";
 import {
   PlaybackShutdownCoordinator,
   type PlaybackShutdownReason,
@@ -54,6 +58,7 @@ import {
 import { isWithinServer, normalizeServerUrl } from "../shared/url-policy";
 import type {
   AppSettings,
+  MpvDiagnostic,
   MpvEventName,
   MpvEventPayload,
   MpvPresentation,
@@ -89,6 +94,12 @@ let serverUrl: string | null = null;
 let startupError: Error | null = null;
 let connectionError: string | null = null;
 let mpvExecutable = "mpv";
+let mpvExecutableResolution: MpvExecutableResolution = {
+  executable: "mpv",
+  source: "unresolved",
+  ignoredConfiguredPath: null,
+};
+let mpvDiagnosticCache: Promise<MpvDiagnostic> | null = null;
 let mpvIntegrationScript: string | null = null;
 let mpvPresentation: MpvPresentation = "jellyfin";
 let startMpvFullscreen = true;
@@ -131,6 +142,10 @@ interface SettingsSmokeReport {
   title: string;
   hasForm: boolean;
   hasMpvPath: boolean;
+  hasMpvTest: boolean;
+  hasMpvDiagnostic: boolean;
+  hasMpvTestBridge: boolean;
+  hasDiagnosticResult: boolean;
   hasBridge: boolean;
   playbackMode: unknown;
 }
@@ -317,13 +332,39 @@ function refreshMpvExecutable(): void {
     environmentPath: process.env.MPV_PATH,
     configuredPath: persistedSettings.mpvPath,
   });
+  mpvExecutableResolution = resolution;
   mpvExecutable = resolution.executable;
+  mpvDiagnosticCache = null;
   if (resolution.ignoredConfiguredPath) {
     console.warn(
-      `${LOG_PREFIX} Configured MPV executable is unavailable; using mpv from PATH:`,
+      `${LOG_PREFIX} Configured MPV executable is unavailable; selected ${resolution.executable}:`,
       resolution.ignoredConfiguredPath,
     );
   }
+}
+
+function currentMpvDiagnostic(force = false): Promise<MpvDiagnostic> {
+  if (!mpvDiagnosticCache || force) {
+    mpvDiagnosticCache = inspectMpvExecutable(
+      mpvExecutableResolution.executable,
+      mpvExecutableResolution.source,
+      {
+        configuredPathIgnored: Boolean(
+          mpvExecutableResolution.ignoredConfiguredPath,
+        ),
+      },
+    );
+  }
+  return mpvDiagnosticCache;
+}
+
+function testMpvExecutable(candidate: unknown): Promise<MpvDiagnostic> {
+  if (typeof candidate !== "string") {
+    throw new Error("MPV executable path must be a string");
+  }
+  const executable = candidate.trim();
+  if (!executable) return currentMpvDiagnostic(true);
+  return inspectMpvExecutable(executable, "settings");
 }
 
 function initializeRuntime(): void {
@@ -510,12 +551,13 @@ function assertServersSender(event: SenderEvent): void {
   }
 }
 
-function settingsSnapshot(): SettingsSnapshot {
+async function settingsSnapshot(): Promise<SettingsSnapshot> {
   return {
     playbackMode: currentMode,
     startMpvFullscreen,
     mpvPresentation,
     mpvPath: persistedSettings.mpvPath || "",
+    mpvDiagnostic: await currentMpvDiagnostic(),
     appVersion: app.getVersion(),
   };
 }
@@ -543,9 +585,9 @@ function showSettingsWindow(): BrowserWindow {
   const expectedUrl = pathToFileURL(pagePath).href;
   settingsWindow = new BrowserWindow({
     width: 570,
-    height: 590,
+    height: 680,
     minWidth: 460,
-    minHeight: 520,
+    minHeight: 580,
     parent: parent || undefined,
     modal: Boolean(parent),
     show: false,
@@ -620,10 +662,15 @@ function runSettingsSmoke(): void {
     try {
       const report = (await window.webContents.executeJavaScript(`(async () => {
         const settings = await window.settingsApi.load();
+        const diagnostic = await window.settingsApi.testMpv('');
         return {
           title: document.title,
           hasForm: Boolean(document.getElementById('settings-form')),
           hasMpvPath: Boolean(document.getElementById('mpv-path')),
+          hasMpvTest: Boolean(document.getElementById('test-mpv')),
+          hasMpvDiagnostic: Boolean(document.getElementById('mpv-diagnostic')),
+          hasMpvTestBridge: typeof window.settingsApi.testMpv === 'function',
+          hasDiagnosticResult: typeof diagnostic?.available === 'boolean',
           hasBridge: typeof window.settingsApi === 'object',
           playbackMode: settings.playbackMode
         };
@@ -631,6 +678,10 @@ function runSettingsSmoke(): void {
       if (
         !report.hasForm ||
         !report.hasMpvPath ||
+        !report.hasMpvTest ||
+        !report.hasMpvDiagnostic ||
+        !report.hasMpvTestBridge ||
+        !report.hasDiagnosticResult ||
         !report.hasBridge ||
         !isPlaybackMode(report.playbackMode)
       ) {
@@ -1025,10 +1076,17 @@ function registerIpc(): void {
       return result.canceled ? null : result.filePaths[0] || null;
     },
   );
-  ipcMain.handle("jdc:mpv:status", (event: IpcMainInvokeEvent) => {
+  ipcMain.handle(
+    "jdc:settings:test-mpv",
+    (event: IpcMainInvokeEvent, candidate: unknown) => {
+      assertSettingsSender(event);
+      return testMpvExecutable(candidate);
+    },
+  );
+  ipcMain.handle("jdc:mpv:status", async (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
+    const diagnostic = await currentMpvDiagnostic();
     const status = mpvController?.status() || {
-      available: true,
       ready: false,
       executable: mpvExecutable,
       presentation: mpvPresentation,
@@ -1037,6 +1095,11 @@ function registerIpc(): void {
     return {
       ...status,
       backend: currentMode,
+      available: diagnostic.available,
+      executable: diagnostic.executable,
+      version: diagnostic.version,
+      source: diagnostic.source,
+      reason: status.reason || diagnostic.reason,
       startFullscreen: startMpvFullscreen,
     };
   });

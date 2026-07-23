@@ -7,6 +7,10 @@ const mpvPath = document.getElementById("mpv-path");
 const mpvPresentation = document.getElementById("mpv-presentation");
 const mpvFullscreen = document.getElementById("mpv-fullscreen");
 const browseMpv = document.getElementById("browse-mpv");
+const testMpv = document.getElementById("test-mpv");
+const mpvDiagnostic = document.getElementById("mpv-diagnostic");
+const mpvDiagnosticTitle = document.getElementById("mpv-diagnostic-title");
+const mpvDiagnosticDetail = document.getElementById("mpv-diagnostic-detail");
 const cancel = document.getElementById("cancel");
 const save = document.getElementById("save");
 const status = document.getElementById("status");
@@ -20,6 +24,7 @@ function setBusy(value) {
   save.disabled = value;
   cancel.disabled = value;
   browseMpv.disabled = value;
+  testMpv.disabled = value;
 }
 
 function setStatus(message, kind = "error") {
@@ -34,6 +39,40 @@ function errorMessage(error) {
   );
 }
 
+function mpvSourceLabel(source) {
+  return (
+    {
+      "command-line": "Command line override",
+      environment: "Environment override",
+      settings: "Configured executable",
+      path: "System PATH",
+      common: "Standard install location",
+      unresolved: "Not found",
+    }[source] || "Detected executable"
+  );
+}
+
+function renderMpvDiagnostic(diagnostic) {
+  if (!diagnostic) {
+    mpvDiagnostic.dataset.kind = "pending";
+    mpvDiagnosticTitle.textContent = "MPV selection not tested";
+    mpvDiagnosticDetail.textContent = "Use Test MPV to verify this executable.";
+    return;
+  }
+
+  mpvDiagnostic.dataset.kind = diagnostic.available ? "success" : "error";
+  mpvDiagnosticTitle.textContent = diagnostic.available
+    ? `MPV ${diagnostic.version} is available`
+    : "MPV is unavailable";
+  const source = `${mpvSourceLabel(diagnostic.source)}: ${diagnostic.executable}`;
+  const ignored = diagnostic.configuredPathIgnored
+    ? "The saved path was unavailable; Deskfin selected a fallback. "
+    : "";
+  mpvDiagnosticDetail.textContent = diagnostic.available
+    ? `${ignored}${source}`
+    : `${source}. ${diagnostic.reason}`;
+}
+
 async function initialize() {
   try {
     const settings = await window.settingsApi.load();
@@ -41,6 +80,7 @@ async function initialize() {
     mpvPath.value = settings.mpvPath || "";
     mpvPresentation.value = settings.mpvPresentation;
     mpvFullscreen.checked = settings.startMpvFullscreen;
+    renderMpvDiagnostic(settings.mpvDiagnostic);
     version.textContent = `Deskfin ${settings.appVersion}`;
     updateMpvState();
     playbackMode.focus();
@@ -51,20 +91,43 @@ async function initialize() {
 }
 
 playbackMode.addEventListener("change", updateMpvState);
+mpvPath.addEventListener("input", () => renderMpvDiagnostic(null));
 cancel.addEventListener("click", () => window.close());
 browseMpv.addEventListener("click", async () => {
   setStatus("");
   try {
     const selected = await window.settingsApi.browseMpv();
-    if (selected) mpvPath.value = selected;
+    if (selected) {
+      mpvPath.value = selected;
+      renderMpvDiagnostic(null);
+    }
   } catch (error) {
     setStatus(`Could not select MPV: ${errorMessage(error)}`);
   }
 });
 
+testMpv.addEventListener("click", async () => {
+  setStatus("Testing MPV...", "pending");
+  setBusy(true);
+  try {
+    const diagnostic = await window.settingsApi.testMpv(mpvPath.value);
+    renderMpvDiagnostic(diagnostic);
+    if (diagnostic.available) {
+      setStatus(`MPV ${diagnostic.version} started successfully.`, "success");
+    } else {
+      setStatus(`MPV test failed: ${diagnostic.reason}`);
+    }
+  } catch (error) {
+    renderMpvDiagnostic(null);
+    setStatus(`Could not test MPV: ${errorMessage(error)}`);
+  } finally {
+    setBusy(false);
+  }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  setStatus("Checking Jellyfin server...", "pending");
+  setStatus("Saving settings...", "pending");
   setBusy(true);
   try {
     await window.settingsApi.save({
@@ -73,7 +136,7 @@ form.addEventListener("submit", async (event) => {
       mpvPresentation: mpvPresentation.value,
       startMpvFullscreen: mpvFullscreen.checked,
     });
-    setStatus("Connected. Opening Jellyfin...", "success");
+    setStatus("Settings saved.", "success");
   } catch (error) {
     setStatus(errorMessage(error));
     setBusy(false);
