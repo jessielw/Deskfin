@@ -21,8 +21,16 @@ export interface MpvDiagnostic {
 export interface ServerProfile {
   id: string;
   name: string;
+  displayName?: string;
   url: string;
   version?: string;
+}
+
+export type ServerConnectionState = "saved" | "checking" | "online" | "offline";
+
+export interface ServerConnectionStatus {
+  state: ServerConnectionState;
+  message?: string;
 }
 
 export interface AppSettings {
@@ -46,6 +54,7 @@ export interface SettingsSnapshot {
 
 export interface ServerManagerSnapshot {
   servers: ServerProfile[];
+  serverStates: Record<string, ServerConnectionStatus>;
   canClose: boolean;
   activeServerId?: string;
   connectionError?: string;
@@ -55,6 +64,7 @@ export interface ServerManagerSnapshot {
 
 export interface SaveServerRequest {
   url: string;
+  displayName?: string;
   replacingId?: string;
 }
 
@@ -135,5 +145,6 @@ export interface ServerManagerBridge {
   save(request: unknown): Promise<ServerManagerSnapshot>;
   activate(serverId: string): Promise<ServerManagerSnapshot>;
   remove(serverId: string): Promise<ServerManagerSnapshot>;
+  forgetLogin(serverId: string): Promise<ServerManagerSnapshot>;
   onChanged(callback: (snapshot: ServerManagerSnapshot) => void): void;
 }
