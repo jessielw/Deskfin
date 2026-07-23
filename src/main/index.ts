@@ -40,6 +40,10 @@ import {
   type JellyfinServerHealth,
 } from "./server-health";
 import {
+  clearServerLoginData,
+  profilesSharingOrigin,
+} from "./server-login-data";
+import {
   loadWindowState,
   resolveWindowState,
   saveWindowState,
@@ -61,6 +65,7 @@ import {
   normalizeSettings,
   removeServer,
   saveSettings,
+  updateServerDisplayName,
   upsertServer,
 } from "../shared/settings";
 import { isWithinServer, normalizeServerUrl } from "../shared/url-policy";
@@ -72,6 +77,7 @@ import type {
   MpvPresentation,
   PlaybackMode,
   SaveServerRequest,
+  ServerConnectionStatus,
   ServerManagerSnapshot,
   ServerProfile,
   SettingsSnapshot,
@@ -125,6 +131,7 @@ let persistedSettings: AppSettings = normalizeSettings();
 let persistedWindowState: WindowState | null = null;
 let windowStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let serverStatusMessage: string | null = null;
+const serverConnectionStates = new Map<string, ServerConnectionStatus>();
 const playbackShutdown = new PlaybackShutdownCoordinator();
 const mainWindowsPendingClose = new WeakSet<BrowserWindow>();
 const mainWindowsAllowedToClose = new WeakSet<BrowserWindow>();
@@ -169,14 +176,24 @@ interface ServerFailureSmokeReport {
 interface ServersSmokeReport {
   title: string;
   hasForm: boolean;
+  hasServerName: boolean;
   hasServerUrl: boolean;
   hasBridge: boolean;
+  hasForgetLoginBridge: boolean;
   hasServerList: boolean;
+  hasServerStates: boolean;
 }
 
 interface SenderEvent {
   senderFrame?: { url: string } | null;
   sender?: { getURL(): string };
+}
+
+class ServerSwitchCanceledError extends Error {
+  constructor() {
+    super("Server switch canceled");
+    this.name = "ServerSwitchCanceledError";
+  }
 }
 
 function errorMessage(error: unknown): string {
@@ -587,9 +604,30 @@ async function settingsSnapshot(): Promise<SettingsSnapshot> {
   };
 }
 
+function serverLabel(profile: ServerProfile): string {
+  return profile.displayName || profile.name;
+}
+
+function setServerConnectionStatus(
+  serverId: string,
+  state: ServerConnectionStatus["state"],
+  message?: string,
+): void {
+  serverConnectionStates.set(serverId, {
+    state,
+    ...(message ? { message } : {}),
+  });
+}
+
 function serversSnapshot(): ServerManagerSnapshot {
   return {
     servers: persistedSettings.servers,
+    serverStates: Object.fromEntries(
+      persistedSettings.servers.map((profile) => [
+        profile.id,
+        serverConnectionStates.get(profile.id) || { state: "saved" },
+      ]),
+    ),
     canClose: Boolean(mainWindow && !mainWindow.isDestroyed()),
     activeServerId: persistedSettings.activeServerId,
     connectionError: connectionError || undefined,
@@ -655,7 +693,7 @@ function showServersWindow(): BrowserWindow {
   const expectedUrl = pathToFileURL(pagePath).href;
   serversWindow = new BrowserWindow({
     width: 720,
-    height: 620,
+    height: 680,
     minWidth: 540,
     minHeight: 460,
     show: false,
@@ -766,16 +804,22 @@ function runServersSmoke(): void {
         return {
           title: document.title,
           hasForm: Boolean(document.getElementById('server-form')),
+          hasServerName: Boolean(document.getElementById('server-name')),
           hasServerUrl: Boolean(document.getElementById('server-url')),
           hasBridge: typeof window.serverManagerApi === 'object',
-          hasServerList: Array.isArray(snapshot.servers)
+          hasForgetLoginBridge: typeof window.serverManagerApi.forgetLogin === 'function',
+          hasServerList: Array.isArray(snapshot.servers),
+          hasServerStates: Boolean(snapshot.serverStates) && typeof snapshot.serverStates === 'object'
         };
       })()`)) as ServersSmokeReport;
       if (
         !report.hasForm ||
+        !report.hasServerName ||
         !report.hasServerUrl ||
         !report.hasBridge ||
-        !report.hasServerList
+        !report.hasForgetLoginBridge ||
+        !report.hasServerList ||
+        !report.hasServerStates
       ) {
         throw new Error(
           `Incomplete server manager surface: ${JSON.stringify(report)}`,
@@ -855,6 +899,9 @@ function openMainWindow(
   created.ready
     .then(() => {
       connectionError = null;
+      const profile = activeServer(persistedSettings);
+      if (profile) setServerConnectionStatus(profile.id, "online");
+      emitServersSnapshot();
       installMenu();
     })
     .catch((error: unknown) => {
@@ -871,19 +918,28 @@ function recoverFromMainLoadFailure(
   closeMpvController();
   connectionError = `Jellyfin Web could not be loaded. ${errorMessage(error)}`;
   serverStatusMessage = null;
+  const profile = activeServer(persistedSettings);
+  if (profile) {
+    setServerConnectionStatus(profile.id, "offline", connectionError);
+  }
   showServersWindow();
   emitServersSnapshot();
   if (mainWindow === failedWindow) mainWindow = null;
   if (!failedWindow.isDestroyed()) failedWindow.destroy();
 }
 
-function profileFromHealth(health: JellyfinServerHealth): ServerProfile {
-  return {
+function profileFromHealth(
+  health: JellyfinServerHealth,
+  displayName?: string,
+): ServerProfile {
+  const profile: ServerProfile = {
     id: health.serverId,
     name: health.serverName,
     url: health.serverUrl,
     version: health.version || undefined,
   };
+  if (displayName?.trim()) profile.displayName = displayName.trim();
+  return profile;
 }
 
 function savePersistedSettings(settings: AppSettings): void {
@@ -914,7 +970,7 @@ async function confirmServerSwitch(): Promise<void> {
     const result = owner
       ? await dialog.showMessageBox(owner, options)
       : await dialog.showMessageBox(options);
-    if (result.response !== 0) throw new Error("Server switch canceled");
+    if (result.response !== 0) throw new ServerSwitchCanceledError();
   }
   await stopAndReportActivePlayback("server-switch");
 }
@@ -928,6 +984,10 @@ function scheduleActiveServerWindow(windowState: WindowState | null): void {
     if (!created) {
       connectionError = "The selected Jellyfin server could not be opened.";
       serverStatusMessage = null;
+      const profile = activeServer(persistedSettings);
+      if (profile) {
+        setServerConnectionStatus(profile.id, "offline", connectionError);
+      }
       showServersWindow();
       emitServersSnapshot();
       return;
@@ -950,6 +1010,7 @@ function scheduleActiveServerWindow(windowState: WindowState | null): void {
 async function activateValidatedServer(
   health: JellyfinServerHealth,
   replacingId?: string,
+  displayName?: string,
 ): Promise<ServerManagerSnapshot> {
   const existingActive = activeServer(persistedSettings);
   const sameOpenServer =
@@ -958,12 +1019,15 @@ async function activateValidatedServer(
     serverUrl === health.serverUrl;
 
   if (!sameOpenServer) await confirmServerSwitch();
-  savePersistedSettings(
-    upsertServer(persistedSettings, profileFromHealth(health), replacingId),
-  );
+  const profile = profileFromHealth(health, displayName);
+  savePersistedSettings(upsertServer(persistedSettings, profile, replacingId));
+  if (replacingId && replacingId !== profile.id) {
+    serverConnectionStates.delete(replacingId);
+  }
+  setServerConnectionStatus(profile.id, "online");
   serverUrl = health.serverUrl;
   connectionError = null;
-  serverStatusMessage = `Connecting to ${health.serverName}...`;
+  serverStatusMessage = `Connecting to ${serverLabel(profile)}...`;
   installMenu();
 
   if (sameOpenServer) {
@@ -991,15 +1055,23 @@ async function activateSavedServer(
   );
   if (!profile)
     throw new Error("The selected Jellyfin server no longer exists");
-  serverStatusMessage = `Checking ${profile.name}...`;
+  serverStatusMessage = `Checking ${serverLabel(profile)}...`;
+  setServerConnectionStatus(profile.id, "checking");
   connectionError = null;
   emitServersSnapshot();
   try {
     const health = await checkJellyfinServer(profile.url);
-    return activateValidatedServer(health, profile.id);
+    return activateValidatedServer(health, profile.id, profile.displayName);
   } catch (error: unknown) {
     serverStatusMessage = null;
+    if (error instanceof ServerSwitchCanceledError) {
+      connectionError = null;
+      setServerConnectionStatus(profile.id, "online");
+      emitServersSnapshot();
+      return serversSnapshot();
+    }
     connectionError = errorMessage(error);
+    setServerConnectionStatus(profile.id, "offline", connectionError);
     emitServersSnapshot();
     throw error;
   }
@@ -1010,6 +1082,13 @@ function saveServerRequest(value: unknown): SaveServerRequest {
     throw new Error("A Jellyfin server address is required");
   }
   const request: SaveServerRequest = { url: value.url };
+  if (typeof value.displayName === "string") {
+    const displayName = value.displayName.trim();
+    if (displayName.length > 80) {
+      throw new Error("The server display name must be 80 characters or fewer");
+    }
+    request.displayName = displayName;
+  }
   if (typeof value.replacingId === "string" && value.replacingId) {
     request.replacingId = value.replacingId;
   }
@@ -1018,15 +1097,55 @@ function saveServerRequest(value: unknown): SaveServerRequest {
 
 async function saveServer(value: unknown): Promise<ServerManagerSnapshot> {
   const request = saveServerRequest(value);
+  const editedProfile = request.replacingId
+    ? persistedSettings.servers.find(
+        (profile) => profile.id === request.replacingId,
+      )
+    : undefined;
+  if (
+    editedProfile &&
+    request.displayName !== undefined &&
+    normalizeServerUrl(request.url) === editedProfile.url
+  ) {
+    savePersistedSettings(
+      updateServerDisplayName(
+        persistedSettings,
+        editedProfile.id,
+        request.displayName,
+      ),
+    );
+  }
   serverStatusMessage = "Checking Jellyfin server...";
+  if (request.replacingId) {
+    setServerConnectionStatus(request.replacingId, "checking");
+  }
   connectionError = null;
   emitServersSnapshot();
   try {
     const health = await checkJellyfinServer(request.url);
-    return activateValidatedServer(health, request.replacingId);
+    return activateValidatedServer(
+      health,
+      request.replacingId,
+      request.displayName ?? editedProfile?.displayName,
+    );
   } catch (error: unknown) {
     serverStatusMessage = null;
+    if (error instanceof ServerSwitchCanceledError) {
+      connectionError = null;
+      if (request.replacingId) {
+        setServerConnectionStatus(request.replacingId, "online");
+      }
+      emitServersSnapshot();
+      return serversSnapshot();
+    }
     connectionError = errorMessage(error);
+    if (request.replacingId) {
+      setServerConnectionStatus(
+        request.replacingId,
+        "offline",
+        connectionError,
+      );
+    }
     emitServersSnapshot();
     throw error;
   }
@@ -1041,6 +1160,7 @@ async function removeSavedServer(
   const removedActiveServer = persistedSettings.activeServerId === serverId;
   if (removedActiveServer) await confirmServerSwitch();
   savePersistedSettings(removeServer(persistedSettings, serverId));
+  serverConnectionStates.delete(serverId);
   if (removedActiveServer) {
     closeMpvController();
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
@@ -1050,6 +1170,92 @@ async function removeSavedServer(
     serverStatusMessage = null;
   }
   installMenu();
+  return serversSnapshot();
+}
+
+async function forgetSavedServerLogin(
+  serverId: string,
+): Promise<ServerManagerSnapshot> {
+  const profile = persistedSettings.servers.find(
+    (candidate) => candidate.id === serverId,
+  );
+  if (!profile) {
+    throw new Error("The selected Jellyfin server no longer exists");
+  }
+
+  const affectedProfiles = profilesSharingOrigin(
+    persistedSettings.servers,
+    profile,
+  );
+  const activeProfile = activeServer(persistedSettings);
+  const affectsActiveServer = Boolean(
+    activeProfile &&
+    affectedProfiles.some((candidate) => candidate.id === activeProfile.id),
+  );
+  const sharedOriginDetail =
+    affectedProfiles.length > 1
+      ? `\n\nThese saved servers share the same web origin and will also be signed out: ${affectedProfiles
+          .filter((candidate) => candidate.id !== profile.id)
+          .map(serverLabel)
+          .join(", ")}.`
+      : "";
+  const playbackDetail = affectsActiveServer
+    ? " Active playback will be stopped and the Jellyfin page will reload."
+    : "";
+  const options = {
+    type: "warning" as const,
+    title: "Forget Jellyfin login data",
+    message: `Forget login data for ${serverLabel(profile)}?`,
+    detail:
+      `Deskfin will clear cookies and site storage for this server. The server will remain in your saved list.${playbackDetail}` +
+      sharedOriginDetail +
+      "\n\nBrowser cookies may be shared more broadly by a domain, so other services on the same site may also be signed out.",
+    buttons: ["Forget login data", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+  };
+  const owner =
+    serversWindow && !serversWindow.isDestroyed()
+      ? serversWindow
+      : mainWindow && !mainWindow.isDestroyed()
+        ? mainWindow
+        : undefined;
+  const confirmation = owner
+    ? await dialog.showMessageBox(owner, options)
+    : await dialog.showMessageBox(options);
+  if (confirmation.response !== 0) return serversSnapshot();
+
+  serverStatusMessage = `Forgetting login data for ${serverLabel(profile)}...`;
+  connectionError = null;
+  emitServersSnapshot();
+  try {
+    if (affectsActiveServer) {
+      await stopAndReportActivePlayback("server-switch");
+      closeMpvController();
+    }
+    await clearServerLoginData(session.defaultSession, profile.url);
+    console.log(
+      `${LOG_PREFIX} Cleared local Jellyfin login data for ${serverLabel(profile)}`,
+    );
+
+    if (
+      affectsActiveServer &&
+      serverUrl &&
+      mainWindow &&
+      !mainWindow.isDestroyed()
+    ) {
+      const window = mainWindow;
+      try {
+        await window.loadURL(`${serverUrl}/web/`);
+      } catch (error: unknown) {
+        recoverFromMainLoadFailure(window, error);
+        throw error;
+      }
+    }
+  } finally {
+    serverStatusMessage = null;
+    emitServersSnapshot();
+  }
   return serversSnapshot();
 }
 
@@ -1116,6 +1322,16 @@ function registerIpc(): void {
         throw new Error("A saved Jellyfin server is required");
       }
       return removeSavedServer(serverId);
+    },
+  );
+  ipcMain.handle(
+    "jdc:servers:forget-login",
+    async (event: IpcMainInvokeEvent, serverId: unknown) => {
+      assertServersSender(event);
+      if (typeof serverId !== "string") {
+        throw new Error("A saved Jellyfin server is required");
+      }
+      return forgetSavedServerLogin(serverId);
     },
   );
   ipcMain.handle("jdc:settings:load", (event: IpcMainInvokeEvent) => {
@@ -1492,16 +1708,16 @@ function installMenu(): void {
   const serverItems: MenuItemConstructorOptions[] =
     persistedSettings.servers.length > 0
       ? persistedSettings.servers.map((server) => ({
-          label: server.name,
+          label: serverLabel(server),
           sublabel: server.url,
           type: "radio" as const,
           checked: server.id === persistedSettings.activeServerId,
           click: () => {
-            serverStatusMessage = `Checking ${server.name}...`;
+            serverStatusMessage = `Checking ${serverLabel(server)}...`;
             connectionError = null;
             activateSavedServer(server.id).catch((error: unknown) => {
               console.error(
-                `${LOG_PREFIX} Could not switch to ${server.name}:`,
+                `${LOG_PREFIX} Could not switch to ${serverLabel(server)}:`,
                 error,
               );
               installMenu();
@@ -1783,24 +1999,37 @@ app.whenReady().then(async () => {
   }
 
   try {
-    const previousProfile = activeServer(persistedSettings);
     const candidateServerUrl = serverUrl;
+    const candidateProfile = persistedSettings.servers.find(
+      (profile) =>
+        normalizeServerUrl(profile.url) ===
+        normalizeServerUrl(candidateServerUrl),
+    );
+    if (candidateProfile) {
+      setServerConnectionStatus(candidateProfile.id, "checking");
+    }
     const health = await checkJellyfinServer(candidateServerUrl);
     serverUrl = health.serverUrl;
     connectionError = null;
     serverStatusMessage = null;
-    const replacingId =
-      previousProfile &&
-      normalizeServerUrl(previousProfile.url) ===
-        normalizeServerUrl(candidateServerUrl)
-        ? previousProfile.id
-        : undefined;
+    const replacingId = candidateProfile?.id;
+    const profile = profileFromHealth(health, candidateProfile?.displayName);
     savePersistedSettings(
-      upsertServer(persistedSettings, profileFromHealth(health), replacingId),
+      upsertServer(persistedSettings, profile, replacingId),
     );
+    if (replacingId && replacingId !== profile.id) {
+      serverConnectionStates.delete(replacingId);
+    }
+    setServerConnectionStatus(profile.id, "online");
     installMenu();
   } catch (error: unknown) {
     connectionError = errorMessage(error);
+    const failedProfile = persistedSettings.servers.find(
+      (profile) => profile.url === serverUrl,
+    );
+    if (failedProfile) {
+      setServerConnectionStatus(failedProfile.id, "offline", connectionError);
+    }
     serverUrl = null;
     console.error(`${LOG_PREFIX} Server validation failed:`, error);
     installMenu();
