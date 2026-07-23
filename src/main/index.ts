@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  powerMonitor,
   screen,
   shell,
   session,
@@ -12,6 +13,7 @@ import {
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
+  type RenderProcessGoneDetails,
 } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -65,6 +67,14 @@ import {
   resolveServersPagePath,
   resolveServersPreloadPath,
 } from "./runtime-paths";
+import {
+  mainRecoveryMessage,
+  rendererRecoveryAction,
+  rendererRecoveryPrompt,
+  shouldRecoverMainFrameLoadFailure,
+  type MainRecoveryReason,
+  type RendererFailureKind,
+} from "./runtime-recovery";
 import { PRODUCT_IDENTITY } from "../shared/product";
 import {
   activeServer,
@@ -97,10 +107,13 @@ const MAIN_WINDOW_DEFAULT_HEIGHT = 800;
 const MAIN_WINDOW_MIN_WIDTH = 640;
 const MAIN_WINDOW_MIN_HEIGHT = 480;
 const WINDOW_STATE_SAVE_DELAY_MS = 250;
+const RESUME_RECOVERY_DELAY_MS = 1_500;
+const UNRESPONSIVE_RECOVERY_DELAY_MS = 2_500;
 const smokeSwitch = process.argv.includes("--smoke-switch");
 const smokeSettings = process.argv.includes("--smoke-settings");
 const smokeServers = process.argv.includes("--smoke-servers");
 const smokeServerFailure = process.argv.includes("--smoke-server-failure");
+const smokeRuntimeRecovery = process.argv.includes("--smoke-runtime-recovery");
 const smokeDiagnostics = process.argv.includes("--smoke-diagnostics");
 const smokePackaged = process.argv.includes("--smoke-packaged");
 const smokeUserDataArgument = process.argv.find((argument) =>
@@ -110,7 +123,7 @@ app.setName(PRODUCT_IDENTITY.name);
 if (process.platform === "win32") {
   app.setAppUserModelId(PRODUCT_IDENTITY.appId);
 }
-if (smokePackaged && smokeUserDataArgument) {
+if (smokeUserDataArgument) {
   const smokeUserDataPath = decodeURIComponent(
     smokeUserDataArgument.slice("--smoke-user-data=".length),
   );
@@ -155,13 +168,27 @@ let logFilePath: string | null = null;
 let persistedSettings: AppSettings = normalizeSettings();
 let persistedWindowState: WindowState | null = null;
 let windowStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let resumeRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let serverStatusMessage: string | null = null;
+let mainRecoveryState: MainRecoveryState | null = null;
+let fatalMainErrorInProgress = false;
 const serverConnectionStates = new Map<string, ServerConnectionStatus>();
 const playbackShutdown = new PlaybackShutdownCoordinator();
 const mainWindowsPendingClose = new WeakSet<BrowserWindow>();
 const mainWindowsAllowedToClose = new WeakSet<BrowserWindow>();
+const expectedRendererStops = new WeakSet<BrowserWindow>();
+const rendererRecoveryDialogs = new WeakSet<BrowserWindow>();
+const unresponsiveRecoveryTimers = new WeakMap<
+  BrowserWindow,
+  ReturnType<typeof setTimeout>
+>();
 
-if (!isPrimaryInstance) app.quit();
+if (!isPrimaryInstance) {
+  app.quit();
+} else {
+  process.on("uncaughtException", handleFatalMainError);
+  process.on("unhandledRejection", handleFatalMainError);
+}
 
 interface PersistRuntimeOptions {
   includeMode?: boolean;
@@ -179,6 +206,11 @@ interface CreateWindowOptions {
 interface CreatedWindow {
   window: BrowserWindow;
   ready: Promise<void>;
+}
+
+interface MainRecoveryState {
+  reason: MainRecoveryReason;
+  windowState: WindowState | null;
 }
 
 interface SettingsSmokeReport {
@@ -236,6 +268,51 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+function handleFatalMainError(error: unknown): void {
+  const fatalError = asError(error);
+  console.error(`${LOG_PREFIX} Fatal main-process error:`, fatalError);
+  if (fatalMainErrorInProgress) {
+    app.exit(1);
+    return;
+  }
+  fatalMainErrorInProgress = true;
+
+  void (async () => {
+    if (!app.isReady()) {
+      app.exit(1);
+      return;
+    }
+    try {
+      const result = await dialog.showMessageBox({
+        type: "error",
+        title: `${APP_NAME} stopped`,
+        message: `${APP_NAME} encountered an unrecoverable error.`,
+        detail: `${fatalError.message}\n\nRestart Deskfin or quit. Details were written to the local log when logging was available.`,
+        buttons: [`Restart ${APP_NAME}`, "Quit"],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      });
+      try {
+        closeMpvController();
+      } catch (closeError: unknown) {
+        console.error(
+          `${LOG_PREFIX} Could not close MPV after a fatal error:`,
+          errorMessage(closeError),
+        );
+      }
+      if (result.response === 0) app.relaunch();
+    } catch (dialogError: unknown) {
+      console.error(
+        `${LOG_PREFIX} Fatal error dialog failed:`,
+        errorMessage(dialogError),
+      );
+    } finally {
+      app.exit(1);
+    }
+  })();
+}
+
 function requiredPath(value: string | null, label: string): string {
   if (!value) throw new Error(`${label} has not been initialized`);
   return value;
@@ -271,8 +348,8 @@ function focusExistingInstance(): void {
     return;
   }
   if (!app.isReady()) return;
-  if (serverUrl) openMainWindow();
-  else showServersWindow();
+  if (mainRecoveryState || !serverUrl) showServersWindow();
+  else openMainWindow();
 }
 
 function restorableWindowState(): WindowState | null {
@@ -665,12 +742,322 @@ function serversSnapshot(): ServerManagerSnapshot {
         serverConnectionStates.get(profile.id) || { state: "saved" },
       ]),
     ),
-    canClose: Boolean(mainWindow && !mainWindow.isDestroyed()),
+    canClose: Boolean(
+      mainWindow && !mainWindow.isDestroyed() && !mainRecoveryState,
+    ),
     activeServerId: persistedSettings.activeServerId,
     connectionError: connectionError || undefined,
     statusMessage: serverStatusMessage || undefined,
     appVersion: app.getVersion(),
   };
+}
+
+function recoveryWindowState(window: BrowserWindow): WindowState | null {
+  try {
+    return captureWindowState(window);
+  } catch {
+    return restorableWindowState();
+  }
+}
+
+function beginMainRecovery(
+  failedWindow: BrowserWindow,
+  reason: MainRecoveryReason,
+  detail: string,
+  markServerOffline: boolean,
+): void {
+  if (quitting || mainWindow !== failedWindow || failedWindow.isDestroyed()) {
+    return;
+  }
+
+  const windowState = recoveryWindowState(failedWindow);
+  persistMainWindowState(failedWindow);
+  mainRecoveryState = { reason, windowState };
+  connectionError = mainRecoveryMessage(reason, detail);
+  serverStatusMessage = null;
+  const profile = activeServer(persistedSettings);
+  if (markServerOffline && profile) {
+    setServerConnectionStatus(profile.id, "offline", connectionError);
+  }
+
+  console.warn(`${LOG_PREFIX} Entering runtime recovery:`, connectionError);
+  mainWindow = null;
+  if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close();
+  showServersWindow();
+  emitServersSnapshot();
+  installMenu();
+
+  expectedRendererStops.add(failedWindow);
+  failedWindow.hide();
+  closeMpvController();
+  failedWindow.destroy();
+}
+
+async function restoreMainWindowFromRecovery(): Promise<void> {
+  const recovery = mainRecoveryState;
+  if (!recovery || !serverUrl) return;
+  const created = openMainWindow(recovery.windowState, false);
+  if (!created) {
+    throw new Error("Deskfin could not recreate the Jellyfin window");
+  }
+
+  await created.ready;
+  if (mainWindow !== created.window || created.window.isDestroyed()) {
+    throw new Error("The recovered Jellyfin window closed before it was ready");
+  }
+
+  mainRecoveryState = null;
+  connectionError = null;
+  serverStatusMessage = null;
+  if (serversWindow && !serversWindow.isDestroyed()) serversWindow.close();
+  created.window.show();
+  created.window.focus();
+  emitServersSnapshot();
+  installMenu();
+  console.log(
+    `${LOG_PREFIX} Runtime recovery completed after ${recovery.reason}`,
+  );
+}
+
+async function retryActiveServerForRecovery(): Promise<void> {
+  const profile = activeServer(persistedSettings);
+  if (!profile) {
+    showServersWindow();
+    return;
+  }
+  try {
+    await activateSavedServer(profile.id);
+  } catch (error: unknown) {
+    console.warn(
+      `${LOG_PREFIX} Runtime recovery check failed:`,
+      errorMessage(error),
+    );
+    showServersWindow();
+    emitServersSnapshot();
+  }
+}
+
+async function showRendererRecoveryDialog(
+  window: BrowserWindow,
+  kind: RendererFailureKind,
+  detail: string,
+): Promise<void> {
+  if (
+    quitting ||
+    mainWindow !== window ||
+    window.isDestroyed() ||
+    rendererRecoveryDialogs.has(window)
+  ) {
+    return;
+  }
+
+  rendererRecoveryDialogs.add(window);
+  try {
+    const prompt = rendererRecoveryPrompt(kind, detail);
+    const result = await dialog.showMessageBox(window, {
+      type: "error",
+      ...prompt,
+      noLink: true,
+    });
+    const action = rendererRecoveryAction(kind, result.response);
+    if (action === "wait") {
+      console.log(`${LOG_PREFIX} Waiting for Jellyfin Web to respond`);
+      return;
+    }
+    if (action === "quit") {
+      app.quit();
+      return;
+    }
+
+    beginMainRecovery(
+      window,
+      kind === "crashed" ? "renderer-crash" : "unresponsive",
+      detail,
+      false,
+    );
+    if (action === "reload") await retryActiveServerForRecovery();
+  } catch (error: unknown) {
+    console.error(
+      `${LOG_PREFIX} Renderer recovery dialog failed:`,
+      errorMessage(error),
+    );
+    beginMainRecovery(
+      window,
+      kind === "crashed" ? "renderer-crash" : "unresponsive",
+      detail,
+      false,
+    );
+  } finally {
+    rendererRecoveryDialogs.delete(window);
+  }
+}
+
+function clearUnresponsiveRecoveryTimer(window: BrowserWindow): void {
+  const timer = unresponsiveRecoveryTimers.get(window);
+  if (timer) clearTimeout(timer);
+  unresponsiveRecoveryTimers.delete(window);
+}
+
+function installMainWindowRecoveryHandlers(window: BrowserWindow): void {
+  window.webContents.on(
+    "render-process-gone",
+    (_event, details: RenderProcessGoneDetails) => {
+      clearUnresponsiveRecoveryTimer(window);
+      if (
+        quitting ||
+        expectedRendererStops.has(window) ||
+        mainWindow !== window
+      ) {
+        return;
+      }
+      const detail = `Renderer exit reason: ${details.reason}; exit code: ${details.exitCode}.`;
+      console.error(`${LOG_PREFIX} Jellyfin Web renderer stopped:`, detail);
+      void showRendererRecoveryDialog(window, "crashed", detail);
+    },
+  );
+
+  window.on("unresponsive", () => {
+    if (
+      quitting ||
+      mainWindow !== window ||
+      rendererRecoveryDialogs.has(window) ||
+      unresponsiveRecoveryTimers.has(window)
+    ) {
+      return;
+    }
+    console.warn(`${LOG_PREFIX} Jellyfin Web became unresponsive`);
+    const timer = setTimeout(() => {
+      unresponsiveRecoveryTimers.delete(window);
+      if (
+        quitting ||
+        mainWindow !== window ||
+        window.isDestroyed() ||
+        rendererRecoveryDialogs.has(window)
+      ) {
+        return;
+      }
+      void showRendererRecoveryDialog(
+        window,
+        "unresponsive",
+        "Wait for the page, reload the active server, or choose another server.",
+      );
+    }, UNRESPONSIVE_RECOVERY_DELAY_MS);
+    timer.unref();
+    unresponsiveRecoveryTimers.set(window, timer);
+  });
+
+  window.on("responsive", () => {
+    if (unresponsiveRecoveryTimers.has(window)) {
+      console.log(`${LOG_PREFIX} Jellyfin Web became responsive again`);
+    }
+    clearUnresponsiveRecoveryTimer(window);
+  });
+  window.on("closed", () => clearUnresponsiveRecoveryTimer(window));
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, milliseconds);
+    timer.unref();
+  });
+}
+
+async function checkActiveServerAfterResume(): Promise<void> {
+  const profile = activeServer(persistedSettings);
+  if (!profile || quitting) return;
+  const serverId = profile.id;
+  console.log(
+    `${LOG_PREFIX} Checking ${serverLabel(profile)} after system resume`,
+  );
+  serverStatusMessage = `Reconnecting to ${serverLabel(profile)}...`;
+  connectionError = null;
+  setServerConnectionStatus(serverId, "checking");
+  emitServersSnapshot();
+
+  let health: JellyfinServerHealth | null = null;
+  let lastError: unknown = null;
+  for (const retryDelay of [0, 2_000, 5_000]) {
+    if (retryDelay) await delay(retryDelay);
+    if (quitting || activeServer(persistedSettings)?.id !== serverId) return;
+    try {
+      health = await checkJellyfinServer(profile.url);
+      break;
+    } catch (error: unknown) {
+      lastError = error;
+      console.warn(
+        `${LOG_PREFIX} Resume server check failed:`,
+        errorMessage(error),
+      );
+    }
+  }
+  if (quitting || activeServer(persistedSettings)?.id !== serverId) return;
+
+  if (!health) {
+    const detail = errorMessage(lastError);
+    connectionError = mainRecoveryMessage("resume", detail);
+    serverStatusMessage = null;
+    setServerConnectionStatus(serverId, "offline", connectionError);
+    const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    if (window) {
+      beginMainRecovery(window, "resume", detail, true);
+    } else {
+      if (mainRecoveryState) {
+        mainRecoveryState = { ...mainRecoveryState, reason: "resume" };
+      }
+      showServersWindow();
+      emitServersSnapshot();
+      installMenu();
+    }
+    return;
+  }
+
+  const nextProfile = profileFromHealth(health, profile.displayName);
+  savePersistedSettings(
+    upsertServer(persistedSettings, nextProfile, profile.id),
+  );
+  if (profile.id !== nextProfile.id) serverConnectionStates.delete(profile.id);
+  serverUrl = health.serverUrl;
+  connectionError = null;
+  serverStatusMessage = null;
+  setServerConnectionStatus(nextProfile.id, "online");
+  emitServersSnapshot();
+  installMenu();
+  console.log(`${LOG_PREFIX} Jellyfin server is reachable after system resume`);
+
+  if (mainRecoveryState) {
+    try {
+      await restoreMainWindowFromRecovery();
+    } catch (error: unknown) {
+      console.error(
+        `${LOG_PREFIX} Could not restore Jellyfin Web after resume:`,
+        errorMessage(error),
+      );
+    }
+  }
+}
+
+function installPowerMonitorRecovery(): void {
+  powerMonitor.on("suspend", () => {
+    if (resumeRecoveryTimer) {
+      clearTimeout(resumeRecoveryTimer);
+      resumeRecoveryTimer = null;
+    }
+    console.log(`${LOG_PREFIX} System suspended`);
+  });
+  powerMonitor.on("resume", () => {
+    if (resumeRecoveryTimer) clearTimeout(resumeRecoveryTimer);
+    console.log(`${LOG_PREFIX} System resumed; waiting for the network`);
+    resumeRecoveryTimer = setTimeout(() => {
+      resumeRecoveryTimer = null;
+      void checkActiveServerAfterResume().catch((error: unknown) => {
+        console.error(
+          `${LOG_PREFIX} Resume recovery failed:`,
+          errorMessage(error),
+        );
+      });
+    }, RESUME_RECOVERY_DELAY_MS);
+    resumeRecoveryTimer.unref();
+  });
 }
 
 function showSettingsWindow(): BrowserWindow {
@@ -834,6 +1221,67 @@ function runServerFailureSmoke(): void {
       app.exit(1);
     }
   });
+}
+
+function runRuntimeRecoverySmoke(initial: CreatedWindow): void {
+  void (async () => {
+    const originalWindow = initial.window;
+    try {
+      await initial.ready;
+      try {
+        await originalWindow.loadURL(
+          `${requiredPath(serverUrl, "Jellyfin server URL")}/fail`,
+        );
+      } catch {
+        // The deliberate main-frame failure must reject loadURL.
+      }
+
+      const recoveryDeadline = Date.now() + 5_000;
+      while (!mainRecoveryState && Date.now() < recoveryDeadline) {
+        await delay(25);
+      }
+      if (
+        !mainRecoveryState ||
+        mainWindow ||
+        !originalWindow.isDestroyed() ||
+        !serversWindow ||
+        serversWindow.isDestroyed()
+      ) {
+        throw new Error("Main-frame failure did not enter runtime recovery");
+      }
+
+      const profile = activeServer(persistedSettings);
+      if (!profile) throw new Error("Recovery smoke has no active server");
+      await activateSavedServer(profile.id);
+      const recoveredWindow = mainWindow as BrowserWindow | null;
+      if (
+        mainRecoveryState ||
+        !recoveredWindow ||
+        recoveredWindow.isDestroyed() ||
+        recoveredWindow === originalWindow ||
+        connectionError
+      ) {
+        throw new Error("Retry did not recreate a healthy Jellyfin window");
+      }
+      const title =
+        await recoveredWindow.webContents.executeJavaScript("document.title");
+      if (title !== "Recovery Smoke") {
+        throw new Error(`Recovered an unexpected page: ${String(title)}`);
+      }
+
+      console.log(
+        `${LOG_PREFIX} Runtime recovery smoke passed:`,
+        JSON.stringify({
+          originalDestroyed: originalWindow.isDestroyed(),
+          recoveredTitle: title,
+        }),
+      );
+      app.exit(0);
+    } catch (error: unknown) {
+      console.error(`${LOG_PREFIX} Runtime recovery smoke failed:`, error);
+      app.exit(1);
+    }
+  })();
 }
 
 function runServersSmoke(): void {
@@ -1026,9 +1474,13 @@ function runPackagedSmoke(): void {
 
 function openMainWindow(
   windowState: WindowState | null = restorableWindowState(),
+  showWhenReady = true,
 ): CreatedWindow | null {
   if (!serverUrl) return null;
-  const created = createWindow({ bounds: windowState?.bounds });
+  const created = createWindow({
+    bounds: windowState?.bounds,
+    showWhenReady,
+  });
   mainWindow = created.window;
   restoreMainWindowDisplayState(created.window, windowState);
   trackMainWindowState(created.window);
@@ -1051,18 +1503,8 @@ function recoverFromMainLoadFailure(
   failedWindow: BrowserWindow,
   error: unknown,
 ): void {
-  console.error(`${LOG_PREFIX} Initial load failed:`, error);
-  closeMpvController();
-  connectionError = `Jellyfin Web could not be loaded. ${errorMessage(error)}`;
-  serverStatusMessage = null;
-  const profile = activeServer(persistedSettings);
-  if (profile) {
-    setServerConnectionStatus(profile.id, "offline", connectionError);
-  }
-  showServersWindow();
-  emitServersSnapshot();
-  if (mainWindow === failedWindow) mainWindow = null;
-  if (!failedWindow.isDestroyed()) failedWindow.destroy();
+  console.error(`${LOG_PREFIX} Jellyfin Web load failed:`, error);
+  beginMainRecovery(failedWindow, "load-failure", errorMessage(error), true);
 }
 
 function profileFromHealth(
@@ -1155,12 +1597,11 @@ async function activateValidatedServer(
   displayName?: string,
 ): Promise<ServerManagerSnapshot> {
   const existingActive = activeServer(persistedSettings);
+  const sameServer = existingActive?.id === health.serverId;
   const sameOpenServer =
-    Boolean(mainWindow && !mainWindow.isDestroyed()) &&
-    existingActive?.id === health.serverId &&
-    serverUrl === health.serverUrl;
+    Boolean(mainWindow && !mainWindow.isDestroyed()) && sameServer;
 
-  if (!sameOpenServer) await confirmServerSwitch();
+  if (!sameServer) await confirmServerSwitch();
   const profile = profileFromHealth(health, displayName);
   savePersistedSettings(upsertServer(persistedSettings, profile, replacingId));
   if (replacingId && replacingId !== profile.id) {
@@ -1172,7 +1613,9 @@ async function activateValidatedServer(
   serverStatusMessage = `Connecting to ${serverLabel(profile)}...`;
   installMenu();
 
-  if (sameOpenServer) {
+  if (sameServer && mainRecoveryState) {
+    await restoreMainWindowFromRecovery();
+  } else if (sameOpenServer) {
     serverStatusMessage = null;
     setTimeout(() => {
       if (serversWindow && !serversWindow.isDestroyed()) serversWindow.close();
@@ -1180,10 +1623,12 @@ async function activateValidatedServer(
       mainWindow?.focus();
     }, 0);
   } else {
+    const recoveryWindowState = mainRecoveryState?.windowState || null;
+    mainRecoveryState = null;
     const windowState =
       mainWindow && !mainWindow.isDestroyed()
         ? captureWindowState(mainWindow)
-        : restorableWindowState();
+        : recoveryWindowState || restorableWindowState();
     scheduleActiveServerWindow(windowState);
   }
   return serversSnapshot();
@@ -1310,6 +1755,7 @@ async function removeSavedServer(
     serverUrl = null;
     connectionError = null;
     serverStatusMessage = null;
+    mainRecoveryState = null;
   }
   installMenu();
   return serversSnapshot();
@@ -2026,7 +2472,12 @@ function createWindow({
     window.webContents.once(
       "did-fail-load",
       (_event, code, description, _url, isMainFrame) => {
-        if (!isMainFrame || code === -3 || settled) return;
+        if (
+          settled ||
+          !shouldRecoverMainFrameLoadFailure(code, isMainFrame, quitting)
+        ) {
+          return;
+        }
         settled = true;
         reject(
           new Error(`Jellyfin Web failed to load: ${code} ${description}`),
@@ -2035,6 +2486,7 @@ function createWindow({
     );
   });
 
+  installMainWindowRecoveryHandlers(window);
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
     playbackShutdown.cancel();
@@ -2063,10 +2515,16 @@ function createWindow({
   window.webContents.on(
     "did-fail-load",
     (_event, code, description, url, isMainFrame) => {
-      if (isMainFrame)
-        console.error(
-          `${LOG_PREFIX} Failed to load ${url}: ${code} ${description}`,
-        );
+      if (!shouldRecoverMainFrameLoadFailure(code, isMainFrame, quitting)) {
+        return;
+      }
+      console.error(
+        `${LOG_PREFIX} Failed to load ${url}: ${code} ${description}`,
+      );
+      recoverFromMainLoadFailure(
+        window,
+        new Error(`Jellyfin Web failed to load: ${code} ${description}`),
+      );
     },
   );
   window.webContents.once("did-finish-load", () =>
@@ -2077,6 +2535,10 @@ function createWindow({
 }
 
 app.on("before-quit", (event) => {
+  if (resumeRecoveryTimer) {
+    clearTimeout(resumeRecoveryTimer);
+    resumeRecoveryTimer = null;
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     persistMainWindowState(mainWindow);
   }
@@ -2105,8 +2567,8 @@ app.on("before-quit", (event) => {
 app.on("activate", () => {
   if (!isPrimaryInstance) return;
   if (BrowserWindow.getAllWindows().length === 0) {
-    if (serverUrl) openMainWindow();
-    else showServersWindow();
+    if (mainRecoveryState || !serverUrl) showServersWindow();
+    else openMainWindow();
   }
 });
 
@@ -2123,6 +2585,7 @@ app.whenReady().then(async () => {
     },
   );
   registerIpc();
+  installPowerMonitorRecovery();
   installMenu();
   if (smokePackaged) {
     runPackagedSmoke();
@@ -2199,7 +2662,9 @@ app.whenReady().then(async () => {
 
   const initial = openMainWindow();
   if (!initial) throw new Error("Could not create the main window");
-  if (smokeSwitch) {
+  if (smokeRuntimeRecovery) {
+    runRuntimeRecoverySmoke(initial);
+  } else if (smokeSwitch) {
     const initialWindow = initial.window;
     initial.ready
       .then(() => switchMode(currentMode === "web" ? "mpv" : "web"))
