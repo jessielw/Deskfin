@@ -9,6 +9,8 @@ const serverManagerBridge: ServerManagerBridge = {
   save: (request) => ipcRenderer.invoke("jdc:servers:save", request),
   activate: (serverId) => ipcRenderer.invoke("jdc:servers:activate", serverId),
   remove: (serverId) => ipcRenderer.invoke("jdc:servers:remove", serverId),
+  forgetLogin: (serverId) =>
+    ipcRenderer.invoke("jdc:servers:forget-login", serverId),
   onChanged: (callback) => {
     if (typeof callback !== "function") return;
     ipcRenderer.on("jdc:servers:changed", (_event, snapshot: unknown) => {
