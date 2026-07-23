@@ -10,6 +10,17 @@ export async function packageDeskfin() {
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"),
   );
+  const productName = packageJson.productName;
+  const product = packageJson.deskfin;
+  if (
+    typeof productName !== "string" ||
+    !productName ||
+    typeof product?.appId !== "string" ||
+    typeof product?.executableName !== "string" ||
+    typeof product?.category !== "string"
+  ) {
+    throw new Error("package.json is missing the Deskfin product identity");
+  }
   const electronVersion = packageJson.devDependencies?.electron;
   if (
     typeof electronVersion !== "string" ||
@@ -22,10 +33,30 @@ export async function packageDeskfin() {
       "Runtime dependencies require an explicit packaged node_modules policy",
     );
   }
+  const iconDirectory = path.join(projectRoot, "resources", "icons");
+  const iconPath =
+    process.platform === "win32"
+      ? path.join(iconDirectory, "deskfin.ico")
+      : process.platform === "darwin"
+        ? path.join(iconDirectory, "deskfin.icns")
+        : undefined;
 
   return packager({
     dir: projectRoot,
-    name: "Deskfin",
+    name: productName,
+    executableName: product.executableName,
+    appBundleId: product.appId,
+    helperBundleId: `${product.appId}.helper`,
+    appCategoryType: product.category,
+    appCopyright: `Copyright © ${new Date().getUTCFullYear()} Deskfin contributors`,
+    icon: iconPath,
+    win32metadata: {
+      CompanyName: "Deskfin contributors",
+      FileDescription: packageJson.description,
+      InternalName: product.executableName,
+      OriginalFilename: `${product.executableName}.exe`,
+      ProductName: productName,
+    },
     out: path.join(projectRoot, "out"),
     overwrite: true,
     asar: true,
@@ -33,7 +64,10 @@ export async function packageDeskfin() {
     electronVersion,
     platform: process.platform,
     arch: process.arch,
-    extraResource: path.join(projectRoot, "resources", "mpv"),
+    extraResource: [
+      path.join(projectRoot, "resources", "icons"),
+      path.join(projectRoot, "resources", "mpv"),
+    ],
     ignore: [
       /[\\/]\.agents(?:[\\/]|$)/,
       /[\\/]\.github(?:[\\/]|$)/,

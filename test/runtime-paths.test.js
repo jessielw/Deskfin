@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const {
+  resolveAppIconPath,
   resolveMpvIntegrationScript,
   resolvePreloadPath,
   resolveSettingsPagePath,
@@ -42,6 +43,15 @@ test("resolves development resources from the application tree", () => {
     }),
     path.join(appPath, "resources", "mpv", "jellyfin_dc.lua"),
   );
+  assert.equal(
+    resolveAppIconPath({
+      appPath,
+      isPackaged: false,
+      platform: "linux",
+      resourcesPath: path.resolve("packaged-resources"),
+    }),
+    path.join(appPath, "resources", "icons", "deskfin.png"),
+  );
 });
 
 test("resolves the MPV bridge from packaged extra resources", () => {
@@ -53,5 +63,36 @@ test("resolves the MPV bridge from packaged extra resources", () => {
       resourcesPath,
     }),
     path.join(resourcesPath, "mpv", "jellyfin_dc.lua"),
+  );
+  assert.equal(
+    resolveAppIconPath({
+      appPath: path.resolve("app.asar"),
+      isPackaged: true,
+      platform: "win32",
+      resourcesPath,
+    }),
+    path.join(resourcesPath, "icons", "deskfin.ico"),
+  );
+});
+
+test("uses the multi-resolution ICO only for Windows windows", () => {
+  const appPath = path.resolve("example-app");
+  assert.equal(
+    resolveAppIconPath({
+      appPath,
+      isPackaged: false,
+      platform: "win32",
+      resourcesPath: path.resolve("packaged-resources"),
+    }),
+    path.join(appPath, "resources", "icons", "deskfin.ico"),
+  );
+  assert.equal(
+    resolveAppIconPath({
+      appPath,
+      isPackaged: false,
+      platform: "darwin",
+      resourcesPath: path.resolve("packaged-resources"),
+    }),
+    path.join(appPath, "resources", "icons", "deskfin.png"),
   );
 });

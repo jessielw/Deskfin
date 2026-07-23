@@ -57,6 +57,7 @@ import {
   type WindowState,
 } from "./window-state";
 import {
+  resolveAppIconPath,
   resolveMpvIntegrationScript,
   resolvePreloadPath,
   resolveSettingsPagePath,
@@ -64,6 +65,7 @@ import {
   resolveServersPagePath,
   resolveServersPreloadPath,
 } from "./runtime-paths";
+import { PRODUCT_IDENTITY } from "../shared/product";
 import {
   activeServer,
   loadSettings,
@@ -88,7 +90,7 @@ import type {
   SettingsSnapshot,
 } from "../shared/types";
 
-const APP_NAME = "Deskfin";
+const APP_NAME = PRODUCT_IDENTITY.name;
 const LOG_PREFIX = `[${APP_NAME}]`;
 const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 800;
@@ -104,6 +106,10 @@ const smokePackaged = process.argv.includes("--smoke-packaged");
 const smokeUserDataArgument = process.argv.find((argument) =>
   argument.startsWith("--smoke-user-data="),
 );
+app.setName(PRODUCT_IDENTITY.name);
+if (process.platform === "win32") {
+  app.setAppUserModelId(PRODUCT_IDENTITY.appId);
+}
 if (smokePackaged && smokeUserDataArgument) {
   const smokeUserDataPath = decodeURIComponent(
     smokeUserDataArgument.slice("--smoke-user-data=".length),
@@ -134,6 +140,7 @@ let mpvExecutableResolution: MpvExecutableResolution = {
 };
 let mpvDiagnosticCache: Promise<MpvDiagnostic> | null = null;
 let mpvIntegrationScript: string | null = null;
+let appIconPath: string | null = null;
 let mpvPresentation: MpvPresentation = "jellyfin";
 let startMpvFullscreen = true;
 let preloadPath: string | null = null;
@@ -462,6 +469,11 @@ function initializeRuntime(): void {
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
   });
+  appIconPath = resolveAppIconPath({
+    appPath: app.getAppPath(),
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+  });
   refreshMpvExecutable();
 
   try {
@@ -680,6 +692,7 @@ function showSettingsWindow(): BrowserWindow {
     modal: Boolean(parent),
     show: false,
     title: `${APP_NAME} Settings`,
+    icon: requiredPath(appIconPath, "Application icon"),
     webPreferences: {
       preload: requiredPath(settingsPreloadPath, "Settings preload"),
       contextIsolation: true,
@@ -723,6 +736,7 @@ function showServersWindow(): BrowserWindow {
     minHeight: 460,
     show: false,
     title: `${APP_NAME} Servers`,
+    icon: requiredPath(appIconPath, "Application icon"),
     webPreferences: {
       preload: requiredPath(serversPreloadPath, "Servers preload"),
       contextIsolation: true,
@@ -936,6 +950,9 @@ function runPackagedSmoke(): void {
           `Expected an ASAR application, got ${app.getAppPath()}`,
         );
       }
+      if (app.getName() !== PRODUCT_IDENTITY.name) {
+        throw new Error(`Unexpected packaged product name: ${app.getName()}`);
+      }
       for (const runtimePath of [
         preloadPath,
         settingsPreloadPath,
@@ -955,6 +972,15 @@ function runPackagedSmoke(): void {
       ) {
         throw new Error(
           `External MPV integration resource is missing: ${mpvIntegrationScript}`,
+        );
+      }
+      if (
+        !appIconPath ||
+        !fs.existsSync(appIconPath) ||
+        path.dirname(path.dirname(appIconPath)) !== process.resourcesPath
+      ) {
+        throw new Error(
+          `External application icon resource is missing: ${appIconPath}`,
         );
       }
 
@@ -980,6 +1006,7 @@ function runPackagedSmoke(): void {
         JSON.stringify({
           ...report,
           appPath: path.basename(app.getAppPath()),
+          appIcon: path.basename(appIconPath),
           mpvResource: path.basename(mpvIntegrationScript),
         }),
       );
@@ -1971,6 +1998,7 @@ function createWindow({
     minHeight: MAIN_WINDOW_MIN_HEIGHT,
     show: false,
     title: `${APP_NAME} - ${mode.toUpperCase()}`,
+    icon: requiredPath(appIconPath, "Application icon"),
     webPreferences: {
       preload: requiredPath(preloadPath, "Main preload"),
       additionalArguments: preloadArguments,

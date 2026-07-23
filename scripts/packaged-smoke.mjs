@@ -1,18 +1,34 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { packageDeskfin } from "./package-app.mjs";
 
 const SMOKE_TIMEOUT_MS = 45_000;
+const projectRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const packageJson = JSON.parse(
+  fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"),
+);
+const executableName = packageJson.deskfin.executableName;
+const productName = packageJson.productName;
 
 function executablePath(bundlePath) {
   if (process.platform === "win32") {
-    return path.join(bundlePath, "Deskfin.exe");
+    return path.join(bundlePath, `${executableName}.exe`);
   }
   if (process.platform === "darwin") {
-    return path.join(bundlePath, "Deskfin.app", "Contents", "MacOS", "Deskfin");
+    return path.join(
+      bundlePath,
+      `${productName}.app`,
+      "Contents",
+      "MacOS",
+      executableName,
+    );
   }
-  return path.join(bundlePath, "Deskfin");
+  return path.join(bundlePath, executableName);
 }
 
 function launchSmoke(executable, userDataPath) {

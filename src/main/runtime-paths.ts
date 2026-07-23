@@ -6,6 +6,13 @@ interface MpvIntegrationPathOptions {
   resourcesPath: string;
 }
 
+interface AppResourcePathOptions {
+  appPath: string;
+  isPackaged: boolean;
+  platform?: NodeJS.Platform;
+  resourcesPath: string;
+}
+
 export function resolvePreloadPath(appPath: string): string {
   return path.join(appPath, "dist", "preload.js");
 }
@@ -33,4 +40,15 @@ export function resolveMpvIntegrationScript({
 }: MpvIntegrationPathOptions): string {
   const base = isPackaged ? resourcesPath : path.join(appPath, "resources");
   return path.join(base, "mpv", "jellyfin_dc.lua");
+}
+
+export function resolveAppIconPath({
+  appPath,
+  isPackaged,
+  platform = process.platform,
+  resourcesPath,
+}: AppResourcePathOptions): string {
+  const base = isPackaged ? resourcesPath : path.join(appPath, "resources");
+  const fileName = platform === "win32" ? "deskfin.ico" : "deskfin.png";
+  return path.join(base, "icons", fileName);
 }
