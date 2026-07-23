@@ -7,7 +7,7 @@ I wanted something deliberately thin: a stable cross-platform desktop wrapper
 around the official Jellyfin Web interface, without taking on the maintenance
 burden of building a second Jellyfin frontend or video engine.
 
-## Why Electron
+## Electron
 
 I considered a few other approaches first.
 
