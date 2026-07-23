@@ -54,25 +54,26 @@ if (!address || typeof address === "string") {
   throw new Error("Runtime recovery smoke server did not bind to TCP");
 }
 const serverUrl = `http://127.0.0.1:${address.port}`;
+const electronArguments = [
+  ...(process.platform === "linux" &&
+  process.env.DESKFIN_TEST_NO_SANDBOX === "1"
+    ? ["--no-sandbox"]
+    : []),
+  projectRoot,
+  "--smoke-runtime-recovery",
+  `--server-url=${serverUrl}`,
+  `--smoke-user-data=${encodeURIComponent(userDataPath)}`,
+];
 
 let exitCode = 1;
 try {
   exitCode = await new Promise((resolve, reject) => {
-    const child = spawn(
-      electronPath,
-      [
-        projectRoot,
-        "--smoke-runtime-recovery",
-        `--server-url=${serverUrl}`,
-        `--smoke-user-data=${encodeURIComponent(userDataPath)}`,
-      ],
-      {
-        cwd: projectRoot,
-        shell: false,
-        stdio: "inherit",
-        windowsHide: true,
-      },
-    );
+    const child = spawn(electronPath, electronArguments, {
+      cwd: projectRoot,
+      shell: false,
+      stdio: "inherit",
+      windowsHide: true,
+    });
     let settled = false;
     let timer = null;
     const finish = (error, code = 1) => {

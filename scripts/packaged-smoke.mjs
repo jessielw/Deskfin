@@ -32,19 +32,20 @@ function executablePath(bundlePath) {
 }
 
 function launchSmoke(executable, userDataPath) {
+  const smokeArguments = [
+    ...(process.platform === "linux" &&
+    process.env.DESKFIN_TEST_NO_SANDBOX === "1"
+      ? ["--no-sandbox"]
+      : []),
+    "--smoke-packaged",
+    `--smoke-user-data=${encodeURIComponent(userDataPath)}`,
+  ];
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      executable,
-      [
-        "--smoke-packaged",
-        `--smoke-user-data=${encodeURIComponent(userDataPath)}`,
-      ],
-      {
-        shell: false,
-        stdio: "inherit",
-        windowsHide: true,
-      },
-    );
+    const child = spawn(executable, smokeArguments, {
+      shell: false,
+      stdio: "inherit",
+      windowsHide: true,
+    });
     let settled = false;
     const finish = (error) => {
       if (settled) return;
