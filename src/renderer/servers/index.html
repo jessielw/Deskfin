@@ -30,6 +30,17 @@
       </section>
 
       <form id="server-form">
+        <label for="server-name">Display name <span>(optional)</span></label>
+        <input
+          id="server-name"
+          name="serverName"
+          type="text"
+          autocomplete="off"
+          maxlength="80"
+          placeholder="Home theater"
+          spellcheck="false"
+        />
+        <small>A local label used only by Deskfin.</small>
         <label for="server-url">Jellyfin server address</label>
         <input
           id="server-url"
