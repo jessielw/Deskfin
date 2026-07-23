@@ -24,6 +24,8 @@
     "smoke:switch": "electron . --smoke-switch",
     "presmoke:server-failure": "npm run build",
     "smoke:server-failure": "electron . --smoke-server-failure --server-url=https://deskfin-invalid.invalid",
+    "presmoke:diagnostics": "npm run build",
+    "smoke:diagnostics": "electron . --smoke-diagnostics",
     "check:types": "tsc -p tsconfig.json --noEmit",
     "check:js": "node --check src/preload/install-player.js && node --check src/renderer/settings/settings.js && node --check src/renderer/servers/servers.js && node --check scripts/mpv-smoke.js",
     "check": "npm run check:types && npm run check:js",
