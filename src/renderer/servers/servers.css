@@ -116,6 +116,53 @@ small {
   min-width: 0;
 }
 
+.server-title {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.server-title h2 {
+  min-width: 0;
+}
+
+.server-badges {
+  display: flex;
+  flex: none;
+  gap: 5px;
+}
+
+.server-badge {
+  padding: 2px 7px;
+  border: 1px solid #454955;
+  border-radius: 999px;
+  color: #b9becc;
+  background: rgb(69 73 85 / 22%);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+}
+
+.server-badge[data-state="checking"] {
+  border-color: #66558e;
+  color: #d4c8f5;
+}
+
+.server-badge[data-state="online"] {
+  border-color: #346c54;
+  color: #98e2bd;
+}
+
+.server-badge[data-state="offline"] {
+  border-color: #75474c;
+  color: #ffc1ba;
+}
+
+.server-badge.active-badge {
+  border-color: #7157b5;
+  color: #d9cdfa;
+}
+
 .server-url {
   overflow: hidden;
   margin-top: 4px;
@@ -130,11 +177,26 @@ small {
   font-size: 11px;
 }
 
+.server-error {
+  display: block;
+  overflow: hidden;
+  margin-top: 6px;
+  color: #ffc1ba;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .server-actions,
 .form-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.server-actions {
+  justify-content: flex-end;
+  max-width: 240px;
 }
 
 #server-form {
@@ -146,6 +208,12 @@ small {
 
 label {
   font-weight: 650;
+}
+
+label span {
+  color: #858b9a;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 input,
