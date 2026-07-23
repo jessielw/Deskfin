@@ -11,6 +11,7 @@ const {
   normalizeSettings,
   removeServer,
   saveSettings,
+  updateServerDisplayName,
   upsertServer,
 } = require("../build/shared/settings");
 
@@ -56,6 +57,7 @@ test("upserts, activates, and removes server profiles", () => {
   const first = upsertServer(normalizeSettings(), {
     id: "one",
     name: "Home",
+    displayName: "Living room",
     url: "https://home.example",
     version: "10.11.0",
   });
@@ -66,6 +68,7 @@ test("upserts, activates, and removes server profiles", () => {
   });
   assert.equal(second.servers.length, 2);
   assert.equal(second.activeServerId, "two");
+  assert.equal(second.servers[0].displayName, "Living room");
 
   const removed = removeServer(second, "two");
   assert.deepEqual(
@@ -73,6 +76,43 @@ test("upserts, activates, and removes server profiles", () => {
     ["one"],
   );
   assert.equal(removed.activeServerId, "one");
+});
+
+test("migrates optional local display names without changing server identity", () => {
+  const settings = normalizeSettings({
+    version: 1,
+    servers: [
+      {
+        id: "home-id",
+        name: "Jellyfin",
+        displayName: " Home theater ",
+        url: "https://home.example/jellyfin",
+      },
+    ],
+  });
+
+  assert.equal(settings.version, SETTINGS_VERSION);
+  assert.deepEqual(settings.servers[0], {
+    id: "home-id",
+    name: "Jellyfin",
+    displayName: "Home theater",
+    url: "https://home.example/jellyfin",
+  });
+});
+
+test("updates a local display name without activating or changing its server", () => {
+  const settings = normalizeSettings({
+    servers: [
+      { id: "one", name: "One", url: "https://one.example" },
+      { id: "two", name: "Two", url: "https://two.example" },
+    ],
+    activeServerId: "one",
+  });
+  const renamed = updateServerDisplayName(settings, "two", " Den ");
+
+  assert.equal(renamed.activeServerId, "one");
+  assert.equal(renamed.servers[1].displayName, "Den");
+  assert.equal(renamed.servers[1].url, "https://two.example");
 });
 
 test("replaces a migrated URL profile with Jellyfin's stable server ID", () => {
@@ -128,6 +168,7 @@ test("round trips settings through the versioned JSON file", (t) => {
       {
         id: "local-server",
         name: "Local",
+        displayName: "Upstairs",
         url: "http://127.0.0.1:8096",
       },
     ],
@@ -145,6 +186,7 @@ test("round trips settings through the versioned JSON file", (t) => {
       {
         id: "local-server",
         name: "Local",
+        displayName: "Upstairs",
         url: "http://127.0.0.1:8096",
       },
     ],
