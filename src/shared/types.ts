@@ -78,6 +78,7 @@ export type MpvEventName =
   | "ended"
   | "quit"
   | "failed"
+  | "shutdown"
   | "mode";
 
 export type MpvEventPayload = Record<string, unknown>;
@@ -95,6 +96,7 @@ export interface DesktopBridge {
   setAudioTrack(track: number): Promise<boolean>;
   setSubtitleTrack(track: number): Promise<boolean>;
   setFullscreen(fullscreen: boolean): Promise<boolean>;
+  shutdownReady(requestId: string): Promise<boolean>;
   focusApp(): Promise<boolean>;
   playHere(url: string): Promise<boolean>;
   openExternal(url: string): Promise<boolean>;

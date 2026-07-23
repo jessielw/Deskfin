@@ -55,6 +55,7 @@ const eventNames = new Set<MpvEventName>([
   "ended",
   "quit",
   "failed",
+  "shutdown",
   "mode",
 ]);
 const eventCallbacks = new Map<MpvEventName, Set<MpvEventCallback>>();
@@ -93,6 +94,8 @@ const desktopBridge: DesktopBridge = {
     ipcRenderer.invoke("jdc:mpv:setSubtitleTrack", track),
   setFullscreen: (fullscreen) =>
     ipcRenderer.invoke("jdc:mpv:setFullscreen", fullscreen),
+  shutdownReady: (requestId) =>
+    ipcRenderer.invoke("jdc:playback-shutdown-ready", requestId),
   focusApp: () => ipcRenderer.invoke("jdc:focus-app"),
   playHere: (url) => ipcRenderer.invoke("jdc:play-here", url),
   openExternal: (url) => ipcRenderer.invoke("jdc:open-external", url),

@@ -23,6 +23,7 @@ function installPlayer(config) {
 
   const bridge = window.jellyfinDesktop;
   const state = { backend: config.backend, startFullscreen: true };
+  let activeMpvPlayer = null;
   bridge.on("mode", (payload) => {
     if (["web", "mpv"].includes(payload?.value)) state.backend = payload.value;
   });
@@ -42,6 +43,22 @@ function installPlayer(config) {
     }
     return Promise.resolve(bridge[method](...args));
   };
+  bridge.on("shutdown", (payload) => {
+    const requestId = payload?.requestId;
+    if (typeof requestId !== "string" || !requestId) return;
+    if (activeMpvPlayer) {
+      activeMpvPlayer._prepareForShutdown(requestId).catch((error) => {
+        console.warn("[Deskfin] Playback shutdown failed:", error);
+      });
+    } else {
+      invoke("shutdownReady", requestId).catch((error) => {
+        console.warn(
+          "[Deskfin] Could not acknowledge playback shutdown:",
+          error,
+        );
+      });
+    }
+  });
 
   const mpvProfile = {
     Name: "Deskfin Electron MPV",
@@ -323,6 +340,7 @@ function installPlayer(config) {
       this._volume = Math.round((this.appSettings.get("volume") || 1) * 100);
       this._failurePending = false;
       this._loadRequest = null;
+      this._shutdownRequestId = null;
       this._wireBridge();
     }
 
@@ -397,6 +415,7 @@ function installPlayer(config) {
     }
 
     async play(options) {
+      activeMpvPlayer = this;
       this._options = options;
       this._currentSrc = options.url;
       this._currentTime = Number(options.playerStartPositionTicks || 0) / 10000;
@@ -430,7 +449,34 @@ function installPlayer(config) {
       this._options = null;
       this._loadRequest = null;
       this._failurePending = false;
+      if (activeMpvPlayer === this) activeMpvPlayer = null;
       this.events.trigger(this, "stopped", [{ src }]);
+    }
+
+    async _prepareForShutdown(requestId) {
+      if (this._shutdownRequestId === requestId) return;
+      this._shutdownRequestId = requestId;
+      try {
+        if (this._currentSrc) {
+          try {
+            if (typeof this.playbackManager?.stop === "function") {
+              await this.playbackManager.stop(this);
+            } else {
+              await this.stop();
+            }
+          } catch {
+            await this.stop();
+          }
+          if (this._currentSrc) await this.stop();
+        }
+      } finally {
+        await invoke("shutdownReady", requestId).catch((error) => {
+          console.warn(
+            "[Deskfin] Could not acknowledge playback shutdown:",
+            error,
+          );
+        });
+      }
     }
 
     _queueFailure(code, message) {
@@ -517,9 +563,11 @@ function installPlayer(config) {
     }
 
     stop() {
-      invoke("stop").catch(() => {});
+      const stopping = invoke("stop").catch((error) => {
+        console.warn("[Deskfin] Could not stop MPV cleanly:", error);
+      });
       this._finish();
-      return Promise.resolve();
+      return stopping.then(() => undefined);
     }
     destroy() {
       return this.stop();

@@ -20,6 +20,10 @@ import {
 } from "./playback/mpv-controller";
 import { resolveMpvExecutable } from "./playback/mpv-resolution";
 import {
+  PlaybackShutdownCoordinator,
+  type PlaybackShutdownReason,
+} from "./playback/playback-shutdown";
+import {
   validateJellyfinServer,
   type JellyfinServerHealth,
 } from "./server-health";
@@ -99,6 +103,9 @@ let persistedSettings: AppSettings = normalizeSettings();
 let persistedWindowState: WindowState | null = null;
 let windowStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let serverStatusMessage: string | null = null;
+const playbackShutdown = new PlaybackShutdownCoordinator();
+const mainWindowsPendingClose = new WeakSet<BrowserWindow>();
+const mainWindowsAllowedToClose = new WeakSet<BrowserWindow>();
 
 if (!isPrimaryInstance) app.quit();
 
@@ -243,12 +250,24 @@ function trackMainWindowState(window: BrowserWindow): void {
   window.on("unmaximize", () => scheduleWindowStateSave(window));
   window.on("enter-full-screen", () => scheduleWindowStateSave(window));
   window.on("leave-full-screen", () => scheduleWindowStateSave(window));
-  window.on("close", () => {
+  window.on("close", (event) => {
     if (windowStateSaveTimer) {
       clearTimeout(windowStateSaveTimer);
       windowStateSaveTimer = null;
     }
     persistMainWindowState(window);
+    if (
+      quitting ||
+      mainWindowsAllowedToClose.has(window) ||
+      mainWindow !== window ||
+      !mpvController
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (mainWindowsPendingClose.has(window)) return;
+    mainWindowsPendingClose.add(window);
+    void closeMainWindowAfterPlayback(window);
   });
 }
 
@@ -408,6 +427,63 @@ function closeMpvController(): void {
   mpvController.close();
   mpvController = null;
   mpvControllerStale = false;
+}
+
+async function stopAndReportActivePlayback(
+  reason: PlaybackShutdownReason,
+): Promise<boolean> {
+  const controller = mpvController;
+  if (!controller) return true;
+
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  let reported = false;
+  if (window && !window.webContents.isDestroyed()) {
+    reported = await playbackShutdown.request(
+      window.webContents.id,
+      reason,
+      (request) => {
+        window.webContents.send("jdc:mpv:event", "shutdown", request);
+      },
+    );
+  }
+  if (!reported) {
+    console.warn(
+      `${LOG_PREFIX} Jellyfin Web did not acknowledge playback shutdown; stopping MPV directly.`,
+    );
+  }
+
+  if (mpvController === controller && controller.current) {
+    try {
+      await controller.execute("stop");
+    } catch (error: unknown) {
+      console.warn(
+        `${LOG_PREFIX} Could not stop MPV through IPC during ${reason}:`,
+        errorMessage(error),
+      );
+    }
+  }
+  return reported;
+}
+
+async function closeMainWindowAfterPlayback(
+  window: BrowserWindow,
+): Promise<void> {
+  const controller = mpvController;
+  try {
+    await stopAndReportActivePlayback("window-close");
+  } catch (error: unknown) {
+    console.warn(
+      `${LOG_PREFIX} Graceful playback shutdown failed while closing:`,
+      errorMessage(error),
+    );
+  } finally {
+    mainWindowsPendingClose.delete(window);
+    if (mpvController === controller) closeMpvController();
+    if (!window.isDestroyed()) {
+      mainWindowsAllowedToClose.add(window);
+      window.close();
+    }
+  }
 }
 
 function assertSettingsSender(event: SenderEvent): void {
@@ -692,27 +768,29 @@ function savePersistedSettings(settings: AppSettings): void {
 }
 
 async function confirmServerSwitch(): Promise<void> {
-  if (!mpvController?.current) return;
-  const owner =
-    serversWindow && !serversWindow.isDestroyed()
-      ? serversWindow
-      : mainWindow && !mainWindow.isDestroyed()
-        ? mainWindow
-        : undefined;
-  const options = {
-    type: "warning" as const,
-    title: "Switch Jellyfin server",
-    message: "Stop the current MPV playback and switch servers?",
-    detail: "Deskfin will close the current player before opening the server.",
-    buttons: ["Stop and switch", "Cancel"],
-    defaultId: 1,
-    cancelId: 1,
-  };
-  const result = owner
-    ? await dialog.showMessageBox(owner, options)
-    : await dialog.showMessageBox(options);
-  if (result.response !== 0) throw new Error("Server switch canceled");
-  await mpvController.execute("stop");
+  if (mpvController?.current) {
+    const owner =
+      serversWindow && !serversWindow.isDestroyed()
+        ? serversWindow
+        : mainWindow && !mainWindow.isDestroyed()
+          ? mainWindow
+          : undefined;
+    const options = {
+      type: "warning" as const,
+      title: "Switch Jellyfin server",
+      message: "Stop the current MPV playback and switch servers?",
+      detail:
+        "Deskfin will report the stopped session before opening the server.",
+      buttons: ["Stop and switch", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+    };
+    const result = owner
+      ? await dialog.showMessageBox(owner, options)
+      : await dialog.showMessageBox(options);
+    if (result.response !== 0) throw new Error("Server switch canceled");
+  }
+  await stopAndReportActivePlayback("server-switch");
 }
 
 function scheduleActiveServerWindow(windowState: WindowState | null): void {
@@ -962,6 +1040,14 @@ function registerIpc(): void {
       startFullscreen: startMpvFullscreen,
     };
   });
+  ipcMain.handle(
+    "jdc:playback-shutdown-ready",
+    (event: IpcMainInvokeEvent, requestId: unknown) => {
+      assertTrustedSender(event);
+      if (typeof requestId !== "string" || !requestId) return false;
+      return playbackShutdown.acknowledge(event.sender.id, requestId);
+    },
+  );
   ipcMain.handle(
     "jdc:mpv:load",
     async (event: IpcMainInvokeEvent, request: unknown) => {
@@ -1290,6 +1376,7 @@ function createWindow({
 
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
+    playbackShutdown.cancel();
     if (!quitting && BrowserWindow.getAllWindows().length === 0) {
       closeMpvController();
     }
@@ -1328,12 +1415,30 @@ function createWindow({
   return { window, ready };
 }
 
-app.on("before-quit", () => {
-  quitting = true;
+app.on("before-quit", (event) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     persistMainWindowState(mainWindow);
   }
-  closeMpvController();
+  if (quitting) return;
+  if (!mpvController || !mainWindow || mainWindow.isDestroyed()) {
+    quitting = true;
+    closeMpvController();
+    return;
+  }
+
+  event.preventDefault();
+  quitting = true;
+  void stopAndReportActivePlayback("quit")
+    .catch((error: unknown) => {
+      console.warn(
+        `${LOG_PREFIX} Graceful playback shutdown failed while quitting:`,
+        errorMessage(error),
+      );
+    })
+    .finally(() => {
+      closeMpvController();
+      app.quit();
+    });
 });
 
 app.on("activate", () => {
