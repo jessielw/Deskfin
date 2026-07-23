@@ -26,8 +26,12 @@
     "smoke:server-failure": "electron . --smoke-server-failure --server-url=https://deskfin-invalid.invalid",
     "presmoke:diagnostics": "npm run build",
     "smoke:diagnostics": "electron . --smoke-diagnostics",
+    "prepackage:dir": "npm run build",
+    "package:dir": "node scripts/package-app.mjs",
+    "presmoke:packaged": "npm run build",
+    "smoke:packaged": "node scripts/packaged-smoke.mjs",
     "check:types": "tsc -p tsconfig.json --noEmit",
-    "check:js": "node --check src/preload/install-player.js && node --check src/renderer/settings/settings.js && node --check src/renderer/servers/servers.js && node --check scripts/mpv-smoke.js",
+    "check:js": "node --check src/preload/install-player.js && node --check src/renderer/settings/settings.js && node --check src/renderer/servers/servers.js && node --check scripts/mpv-smoke.js && node --check scripts/package-app.mjs && node --check scripts/packaged-smoke.mjs",
     "check": "npm run check:types && npm run check:js",
     "pretest": "npm run build:code",
     "test": "node --test",
@@ -36,9 +40,10 @@
     "format:check": "prettier . --check"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "devDependencies": {
+    "@electron/packager": "^20.0.4",
     "@types/node": "^22.20.1",
     "electron": "43.1.1",
     "esbuild": "0.28.1",
