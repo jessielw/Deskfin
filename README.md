@@ -41,3 +41,9 @@ The point is to get the strengths of MPV without embedding and maintaining a
 full native player inside Deskfin. MPV is optional, and Jellyfin Web remains the
 fallback for Live TV, music, active recordings, SyncPlay, and anything else that
 doesn't fit the external-player path cleanly.
+
+## LLM Disclosure
+
+The core of the codebase was written by me. I did use a local LLM as a development aid for tasks such as debugging, grammar and documentation reviews, researching topics I was rusty on, and generating portions of the test suite (because, let's be honest, nobody enjoys writing tests no matter how much they pretend to).
+
+All architecture, design decisions, implementation, and final code review were performed by me. Any LLM suggestions were reviewed modified where necessary, and verified before being incorporated into the project.
