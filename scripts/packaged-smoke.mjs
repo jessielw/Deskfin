@@ -1,0 +1,68 @@
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { packageDeskfin } from "./package-app.mjs";
+
+const SMOKE_TIMEOUT_MS = 45_000;
+
+function executablePath(bundlePath) {
+  if (process.platform === "win32") {
+    return path.join(bundlePath, "Deskfin.exe");
+  }
+  if (process.platform === "darwin") {
+    return path.join(bundlePath, "Deskfin.app", "Contents", "MacOS", "Deskfin");
+  }
+  return path.join(bundlePath, "Deskfin");
+}
+
+function launchSmoke(executable, userDataPath) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      executable,
+      [
+        "--smoke-packaged",
+        `--smoke-user-data=${encodeURIComponent(userDataPath)}`,
+      ],
+      {
+        shell: false,
+        stdio: "inherit",
+        windowsHide: true,
+      },
+    );
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    child.once("error", finish);
+    child.once("exit", (code, signal) => {
+      if (code === 0) finish();
+      else {
+        finish(
+          new Error(
+            `Packaged Deskfin smoke exited with ${code ?? signal ?? "unknown"}`,
+          ),
+        );
+      }
+    });
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(new Error("Packaged Deskfin smoke timed out"));
+    }, SMOKE_TIMEOUT_MS);
+  });
+}
+
+const [bundlePath] = await packageDeskfin();
+if (!bundlePath) throw new Error("Electron Packager returned no application");
+const executable = executablePath(bundlePath);
+if (!fs.existsSync(executable)) {
+  throw new Error(`Packaged executable was not created: ${executable}`);
+}
+const userDataPath = path.join(
+  path.dirname(bundlePath),
+  `smoke-user-data-${process.platform}-${process.arch}`,
+);
+await launchSmoke(executable, userDataPath);

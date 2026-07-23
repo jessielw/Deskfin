@@ -10,6 +10,7 @@ export type MpvExecutableSource =
 
 export interface MpvDiagnostic {
   available: boolean;
+  supported: boolean;
   executable: string;
   source: MpvExecutableSource;
   version: string | null;

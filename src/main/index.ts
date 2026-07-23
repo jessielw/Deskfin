@@ -18,6 +18,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  COMPATIBILITY,
+  supportsJellyfinWebVersion,
+  supportsRuntimeTarget,
+} from "../shared/compatibility";
+import {
   createDiagnosticsReport,
   type DeskfinDiagnostics,
 } from "./diagnostics";
@@ -90,12 +95,25 @@ const MAIN_WINDOW_DEFAULT_HEIGHT = 800;
 const MAIN_WINDOW_MIN_WIDTH = 640;
 const MAIN_WINDOW_MIN_HEIGHT = 480;
 const WINDOW_STATE_SAVE_DELAY_MS = 250;
-const isPrimaryInstance = app.requestSingleInstanceLock();
 const smokeSwitch = process.argv.includes("--smoke-switch");
 const smokeSettings = process.argv.includes("--smoke-settings");
 const smokeServers = process.argv.includes("--smoke-servers");
 const smokeServerFailure = process.argv.includes("--smoke-server-failure");
 const smokeDiagnostics = process.argv.includes("--smoke-diagnostics");
+const smokePackaged = process.argv.includes("--smoke-packaged");
+const smokeUserDataArgument = process.argv.find((argument) =>
+  argument.startsWith("--smoke-user-data="),
+);
+if (smokePackaged && smokeUserDataArgument) {
+  const smokeUserDataPath = decodeURIComponent(
+    smokeUserDataArgument.slice("--smoke-user-data=".length),
+  );
+  if (!path.isAbsolute(smokeUserDataPath)) {
+    throw new Error("Packaged smoke user-data path must be absolute");
+  }
+  app.setPath("userData", smokeUserDataPath);
+}
+const isPrimaryInstance = app.requestSingleInstanceLock();
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -164,6 +182,7 @@ interface SettingsSmokeReport {
   hasMpvDiagnostic: boolean;
   hasMpvTestBridge: boolean;
   hasDiagnosticResult: boolean;
+  hasSupportedResult: boolean;
   hasBridge: boolean;
   playbackMode: unknown;
 }
@@ -182,6 +201,12 @@ interface ServersSmokeReport {
   hasForgetLoginBridge: boolean;
   hasServerList: boolean;
   hasServerStates: boolean;
+}
+
+interface PackagedSmokeReport {
+  title: string;
+  hasBridge: boolean;
+  hasServerManager: boolean;
 }
 
 interface SenderEvent {
@@ -734,6 +759,7 @@ function runSettingsSmoke(): void {
           hasMpvDiagnostic: Boolean(document.getElementById('mpv-diagnostic')),
           hasMpvTestBridge: typeof window.settingsApi.testMpv === 'function',
           hasDiagnosticResult: typeof diagnostic?.available === 'boolean',
+          hasSupportedResult: typeof diagnostic?.supported === 'boolean',
           hasBridge: typeof window.settingsApi === 'object',
           playbackMode: settings.playbackMode
         };
@@ -745,6 +771,7 @@ function runSettingsSmoke(): void {
         !report.hasMpvDiagnostic ||
         !report.hasMpvTestBridge ||
         !report.hasDiagnosticResult ||
+        !report.hasSupportedResult ||
         !report.hasBridge ||
         !isPlaybackMode(report.playbackMode)
       ) {
@@ -887,6 +914,83 @@ function runDiagnosticsSmoke(): void {
   })();
 }
 
+function runPackagedSmoke(): void {
+  const window = showServersWindow();
+  window.webContents.once("did-finish-load", async () => {
+    try {
+      if (!app.isPackaged) {
+        throw new Error("Application is not running from a packaged bundle");
+      }
+      if (process.versions.electron !== COMPATIBILITY.electronVersion) {
+        throw new Error(
+          `Packaged Electron ${process.versions.electron} does not match ${COMPATIBILITY.electronVersion}`,
+        );
+      }
+      if (!supportsRuntimeTarget(process.platform, process.arch)) {
+        throw new Error(
+          `Packaged runtime target is unsupported: ${process.platform}-${process.arch}`,
+        );
+      }
+      if (path.basename(app.getAppPath()) !== "app.asar") {
+        throw new Error(
+          `Expected an ASAR application, got ${app.getAppPath()}`,
+        );
+      }
+      for (const runtimePath of [
+        preloadPath,
+        settingsPreloadPath,
+        serversPreloadPath,
+        settingsPagePath,
+        serversPagePath,
+      ]) {
+        if (!runtimePath || !fs.existsSync(runtimePath)) {
+          throw new Error(`Packaged runtime file is missing: ${runtimePath}`);
+        }
+      }
+      if (
+        !mpvIntegrationScript ||
+        !fs.existsSync(mpvIntegrationScript) ||
+        path.dirname(path.dirname(mpvIntegrationScript)) !==
+          process.resourcesPath
+      ) {
+        throw new Error(
+          `External MPV integration resource is missing: ${mpvIntegrationScript}`,
+        );
+      }
+
+      const report = (await window.webContents.executeJavaScript(`(async () => {
+        const snapshot = await window.serverManagerApi.load();
+        return {
+          title: document.title,
+          hasBridge: typeof window.serverManagerApi === 'object',
+          hasServerManager: Array.isArray(snapshot.servers)
+        };
+      })()`)) as PackagedSmokeReport;
+      if (
+        report.title !== `${APP_NAME} Servers` ||
+        !report.hasBridge ||
+        !report.hasServerManager
+      ) {
+        throw new Error(
+          `Packaged server surface is incomplete: ${JSON.stringify(report)}`,
+        );
+      }
+      console.log(
+        `${LOG_PREFIX} Packaged-runtime smoke passed:`,
+        JSON.stringify({
+          ...report,
+          appPath: path.basename(app.getAppPath()),
+          mpvResource: path.basename(mpvIntegrationScript),
+        }),
+      );
+      app.exit(0);
+    } catch (error: unknown) {
+      console.error(`${LOG_PREFIX} Packaged-runtime smoke failed:`, error);
+      app.exit(1);
+    }
+  });
+}
+
 function openMainWindow(
   windowState: WindowState | null = restorableWindowState(),
 ): CreatedWindow | null {
@@ -932,6 +1036,11 @@ function profileFromHealth(
   health: JellyfinServerHealth,
   displayName?: string,
 ): ServerProfile {
+  if (health.version && !supportsJellyfinWebVersion(health.version)) {
+    console.warn(
+      `${LOG_PREFIX} Jellyfin ${health.version} is outside the tested ${COMPATIBILITY.jellyfinWebMinor}.x compatibility line`,
+    );
+  }
   const profile: ServerProfile = {
     id: health.serverId,
     name: health.serverName,
@@ -1573,8 +1682,10 @@ async function showAboutDialog(): Promise<void> {
       `Chromium ${process.versions.chrome}`,
       `Node.js ${process.versions.node}`,
       diagnostic.available
-        ? `MPV ${diagnostic.version}`
+        ? `MPV ${diagnostic.version}${diagnostic.supported ? "" : " (unsupported version)"}`
         : "MPV not currently available",
+      `Supported Jellyfin Web: ${COMPATIBILITY.jellyfinWebMinor}.x`,
+      `Supported MPV: ${COMPATIBILITY.minimumMpvVersion}+`,
       "",
       "Deskfin does not upload telemetry or crash reports.",
     ].join("\n"),
@@ -1644,6 +1755,7 @@ async function collectDiagnostics(): Promise<string> {
     },
     mpv: {
       available: mpv.available,
+      supported: mpv.supported,
       version: mpv.version,
       source: mpv.source,
       executableName,
@@ -1653,6 +1765,15 @@ async function collectDiagnostics(): Promise<string> {
       savedServerCount: persistedSettings.servers.length,
       activeServerVersion: activeProfile?.version || null,
       connected: Boolean(serverUrl && mainWindow && !mainWindow.isDestroyed()),
+    },
+    compatibility: {
+      jellyfinWeb: `${COMPATIBILITY.jellyfinWebMinor}.x`,
+      electron: COMPATIBILITY.electronVersion,
+      minimumMpv: COMPATIBILITY.minimumMpvVersion,
+      runtimeTargetSupported: supportsRuntimeTarget(
+        process.platform,
+        process.arch,
+      ),
     },
     codecs: diagnosticCodecReport(codecReport),
   };
@@ -1969,6 +2090,10 @@ app.whenReady().then(async () => {
   );
   registerIpc();
   installMenu();
+  if (smokePackaged) {
+    runPackagedSmoke();
+    return;
+  }
   if (smokeDiagnostics) {
     runDiagnosticsSmoke();
     return;

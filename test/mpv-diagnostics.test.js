@@ -30,6 +30,7 @@ test("reports a runnable MPV executable and its version", async () => {
 
   assert.deepEqual(diagnostic, {
     available: true,
+    supported: true,
     executable: "/usr/bin/mpv",
     source: "path",
     version: "0.40.0",
@@ -37,6 +38,16 @@ test("reports a runnable MPV executable and its version", async () => {
     reason: "",
     configuredPathIgnored: true,
   });
+});
+
+test("reports runnable MPV versions below the supported floor", async () => {
+  const diagnostic = await inspectMpvExecutable("mpv", "path", {
+    run: async () => ({ code: 0, stdout: "mpv 0.36.0\n", stderr: "" }),
+  });
+
+  assert.equal(diagnostic.available, true);
+  assert.equal(diagnostic.supported, false);
+  assert.match(diagnostic.reason, /0\.37\.0 or newer/);
 });
 
 test("rejects an executable that is not MPV", async () => {

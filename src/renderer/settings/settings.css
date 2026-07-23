@@ -151,6 +151,14 @@ code {
   color: #9cddb0;
 }
 
+.mpv-diagnostic[data-kind="warning"] {
+  border-color: rgb(199 153 74 / 70%);
+}
+
+.mpv-diagnostic[data-kind="warning"] strong {
+  color: #f0cc8e;
+}
+
 .mpv-diagnostic[data-kind="error"] {
   border-color: rgb(201 96 91 / 65%);
 }

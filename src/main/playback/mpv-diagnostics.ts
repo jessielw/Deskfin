@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { COMPATIBILITY, supportsMpvVersion } from "../../shared/compatibility";
 import type { MpvDiagnostic, MpvExecutableSource } from "../../shared/types";
 
 const MPV_VERSION_TIMEOUT_MS = 3000;
@@ -80,6 +81,7 @@ export async function inspectMpvExecutable(
   const base = {
     executable,
     source,
+    supported: false,
     configuredPathIgnored,
   };
   if (!hasMpvExecutableName(executable)) {
@@ -119,8 +121,11 @@ export async function inspectMpvExecutable(
     return {
       ...base,
       available: true,
+      supported: supportsMpvVersion(parsed.version),
       ...parsed,
-      reason: "",
+      reason: supportsMpvVersion(parsed.version)
+        ? ""
+        : `Deskfin supports MPV ${COMPATIBILITY.minimumMpvVersion} or newer`,
     };
   } catch (error: unknown) {
     return {

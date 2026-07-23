@@ -21,6 +21,7 @@ test("creates a support report without leaking embedded secrets", () => {
     },
     mpv: {
       available: false,
+      supported: false,
       version: null,
       source: "settings",
       executableName: "mpv.exe",
@@ -30,6 +31,12 @@ test("creates a support report without leaking embedded secrets", () => {
       savedServerCount: 2,
       activeServerVersion: "10.11.0",
       connected: true,
+    },
+    compatibility: {
+      jellyfinWeb: "10.11.x",
+      electron: "43.1.1",
+      minimumMpv: "0.37.0",
+      runtimeTargetSupported: true,
     },
   });
 

@@ -24,6 +24,7 @@ export interface DeskfinDiagnostics {
   };
   mpv: {
     available: boolean;
+    supported: boolean;
     version: string | null;
     source: string;
     executableName: string;
@@ -33,6 +34,12 @@ export interface DeskfinDiagnostics {
     savedServerCount: number;
     activeServerVersion: string | null;
     connected: boolean;
+  };
+  compatibility: {
+    jellyfinWeb: string;
+    electron: string;
+    minimumMpv: string;
+    runtimeTargetSupported: boolean;
   };
   codecs?: Record<string, unknown>;
 }

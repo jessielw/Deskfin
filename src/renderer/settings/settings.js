@@ -60,16 +60,23 @@ function renderMpvDiagnostic(diagnostic) {
     return;
   }
 
-  mpvDiagnostic.dataset.kind = diagnostic.available ? "success" : "error";
+  mpvDiagnostic.dataset.kind =
+    diagnostic.available && diagnostic.supported
+      ? "success"
+      : diagnostic.available
+        ? "warning"
+        : "error";
   mpvDiagnosticTitle.textContent = diagnostic.available
-    ? `MPV ${diagnostic.version} is available`
+    ? diagnostic.supported
+      ? `MPV ${diagnostic.version} is available`
+      : `MPV ${diagnostic.version} is outside the supported range`
     : "MPV is unavailable";
   const source = `${mpvSourceLabel(diagnostic.source)}: ${diagnostic.executable}`;
   const ignored = diagnostic.configuredPathIgnored
     ? "The saved path was unavailable; Deskfin selected a fallback. "
     : "";
   mpvDiagnosticDetail.textContent = diagnostic.available
-    ? `${ignored}${source}`
+    ? `${ignored}${source}${diagnostic.supported ? "" : `. ${diagnostic.reason}`}`
     : `${source}. ${diagnostic.reason}`;
 }
 
@@ -112,8 +119,12 @@ testMpv.addEventListener("click", async () => {
   try {
     const diagnostic = await window.settingsApi.testMpv(mpvPath.value);
     renderMpvDiagnostic(diagnostic);
-    if (diagnostic.available) {
+    if (diagnostic.available && diagnostic.supported) {
       setStatus(`MPV ${diagnostic.version} started successfully.`, "success");
+    } else if (diagnostic.available) {
+      setStatus(
+        `MPV ${diagnostic.version} runs, but ${diagnostic.reason.toLowerCase()}.`,
+      );
     } else {
       setStatus(`MPV test failed: ${diagnostic.reason}`);
     }
