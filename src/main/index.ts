@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -12,8 +13,15 @@ import {
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
 } from "electron";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  createDiagnosticsReport,
+  type DeskfinDiagnostics,
+} from "./diagnostics";
+import { installFileLogging } from "./logging";
 import {
   MpvController,
   normalizeMpvPresentation,
@@ -81,6 +89,7 @@ const smokeSwitch = process.argv.includes("--smoke-switch");
 const smokeSettings = process.argv.includes("--smoke-settings");
 const smokeServers = process.argv.includes("--smoke-servers");
 const smokeServerFailure = process.argv.includes("--smoke-server-failure");
+const smokeDiagnostics = process.argv.includes("--smoke-diagnostics");
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -110,6 +119,8 @@ let serversPagePath: string | null = null;
 let serversPreloadPath: string | null = null;
 let settingsPath: string | null = null;
 let windowStatePath: string | null = null;
+let logDirectory: string | null = null;
+let logFilePath: string | null = null;
 let persistedSettings: AppSettings = normalizeSettings();
 let persistedWindowState: WindowState | null = null;
 let windowStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -368,8 +379,22 @@ function testMpvExecutable(candidate: unknown): Promise<MpvDiagnostic> {
 }
 
 function initializeRuntime(): void {
-  settingsPath = path.join(app.getPath("userData"), "settings.json");
-  windowStatePath = path.join(app.getPath("userData"), "window-state.json");
+  const userDataPath = app.getPath("userData");
+  logDirectory = path.join(userDataPath, "logs");
+  try {
+    const logging = installFileLogging(logDirectory);
+    logFilePath = logging.filePath;
+  } catch (error: unknown) {
+    console.warn(
+      `${LOG_PREFIX} Could not initialize local logging:`,
+      errorMessage(error),
+    );
+  }
+  console.log(
+    `${LOG_PREFIX} Starting ${app.getVersion()} on ${process.platform} ${process.arch} (Electron ${process.versions.electron})`,
+  );
+  settingsPath = path.join(userDataPath, "settings.json");
+  windowStatePath = path.join(userDataPath, "window-state.json");
   persistedSettings = loadSettings(settingsPath);
   persistedWindowState = loadWindowState(windowStatePath);
   const rawServerUrl =
@@ -766,6 +791,56 @@ function runServersSmoke(): void {
       app.exit(1);
     }
   });
+}
+
+function runDiagnosticsSmoke(): void {
+  void (async () => {
+    try {
+      if (!logFilePath || !fs.existsSync(logFilePath)) {
+        throw new Error("Local log file was not initialized");
+      }
+
+      const menu = Menu.getApplicationMenu();
+      for (const id of [
+        "deskfin-about",
+        "deskfin-copy-diagnostics",
+        "deskfin-open-log-folder",
+      ]) {
+        if (!menu?.getMenuItemById(id)) {
+          throw new Error(`Application menu is missing ${id}`);
+        }
+      }
+
+      const report = await collectDiagnostics();
+      if (!report.startsWith("Deskfin diagnostics")) {
+        throw new Error("Diagnostics report is missing its header");
+      }
+      for (const profile of persistedSettings.servers) {
+        if (report.includes(profile.url)) {
+          throw new Error("Diagnostics report exposed a server address");
+        }
+      }
+
+      clipboard.writeText(report);
+      if (clipboard.readText() !== report) {
+        throw new Error(
+          "Diagnostics report did not round-trip through clipboard",
+        );
+      }
+
+      console.log(
+        `${LOG_PREFIX} Diagnostics smoke passed:`,
+        JSON.stringify({
+          logFile: path.basename(logFilePath),
+          reportLength: report.length,
+        }),
+      );
+      app.exit(0);
+    } catch (error: unknown) {
+      console.error(`${LOG_PREFIX} Diagnostics smoke failed:`, error);
+      app.exit(1);
+    }
+  })();
 }
 
 function openMainWindow(
@@ -1253,6 +1328,136 @@ async function collectCodecReport(
   }
 }
 
+function diagnosticOwner(): BrowserWindow | undefined {
+  return (
+    BrowserWindow.getFocusedWindow() ||
+    settingsWindow ||
+    serversWindow ||
+    mainWindow ||
+    undefined
+  );
+}
+
+function runMenuAction(label: string, action: () => Promise<unknown>): void {
+  void action().catch((error: unknown) => {
+    console.error(`${LOG_PREFIX} ${label} failed:`, errorMessage(error));
+  });
+}
+
+async function showAboutDialog(): Promise<void> {
+  const diagnostic = await currentMpvDiagnostic();
+  const options = {
+    type: "info" as const,
+    title: `About ${APP_NAME}`,
+    message: `${APP_NAME} ${app.getVersion()}`,
+    detail: [
+      "A thin Jellyfin desktop client with Web and MPV playback.",
+      "",
+      `Electron ${process.versions.electron}`,
+      `Chromium ${process.versions.chrome}`,
+      `Node.js ${process.versions.node}`,
+      diagnostic.available
+        ? `MPV ${diagnostic.version}`
+        : "MPV not currently available",
+      "",
+      "Deskfin does not upload telemetry or crash reports.",
+    ].join("\n"),
+  };
+  const owner = diagnosticOwner();
+  if (owner) await dialog.showMessageBox(owner, options);
+  else await dialog.showMessageBox(options);
+}
+
+async function openLogFolder(): Promise<void> {
+  if (!logDirectory) return;
+  const result = await shell.openPath(logDirectory);
+  if (!result) return;
+  const options = {
+    type: "error" as const,
+    title: "Could not open log folder",
+    message: "Deskfin could not open its local log folder.",
+    detail: result,
+  };
+  const owner = diagnosticOwner();
+  if (owner) await dialog.showMessageBox(owner, options);
+  else await dialog.showMessageBox(options);
+}
+
+function diagnosticCodecReport(
+  report: Record<string, unknown> | null,
+): Record<string, unknown> | undefined {
+  if (!report) return undefined;
+  return {
+    h264AacMp4: report.h264AacMp4,
+    h264Mp4: report.h264Mp4,
+    aac: report.aac,
+    hevc: report.hevc,
+    vp9: report.vp9,
+    av1: report.av1,
+    mseH264Aac: report.mseH264Aac,
+    mseHevc: report.mseHevc,
+  };
+}
+
+async function collectDiagnostics(): Promise<string> {
+  const mpv = await currentMpvDiagnostic();
+  const executableName = path.basename(mpv.executable);
+  const codecReport = await collectCodecReport(false);
+  const activeProfile = activeServer(persistedSettings);
+  const value: DeskfinDiagnostics = {
+    generatedAt: new Date().toISOString(),
+    application: {
+      name: APP_NAME,
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+    },
+    platform: {
+      operatingSystem: process.platform,
+      release: os.release(),
+      architecture: process.arch,
+    },
+    runtime: {
+      electron: process.versions.electron,
+      chromium: process.versions.chrome,
+      node: process.versions.node,
+    },
+    playback: {
+      mode: currentMode,
+      mpvPresentation,
+      startMpvFullscreen,
+    },
+    mpv: {
+      available: mpv.available,
+      version: mpv.version,
+      source: mpv.source,
+      executableName,
+      reason: mpv.reason.split(mpv.executable).join(executableName),
+    },
+    jellyfin: {
+      savedServerCount: persistedSettings.servers.length,
+      activeServerVersion: activeProfile?.version || null,
+      connected: Boolean(serverUrl && mainWindow && !mainWindow.isDestroyed()),
+    },
+    codecs: diagnosticCodecReport(codecReport),
+  };
+  return createDiagnosticsReport(value);
+}
+
+async function copyDiagnostics(): Promise<void> {
+  const report = await collectDiagnostics();
+  clipboard.writeText(report);
+  const options = {
+    type: "info" as const,
+    title: "Diagnostics copied",
+    message: "Deskfin diagnostics were copied to the clipboard.",
+    detail:
+      "The report excludes access tokens, server addresses, media URLs, and account details.",
+  };
+  const owner = diagnosticOwner();
+  if (owner) await dialog.showMessageBox(owner, options);
+  else await dialog.showMessageBox(options);
+}
+
 function switchMode(
   mode: PlaybackMode,
   targetUrl: string | null = null,
@@ -1316,6 +1521,12 @@ function installMenu(): void {
           accelerator: "CmdOrCtrl+,",
           click: () => showSettingsWindow(),
         },
+        { type: "separator" },
+        {
+          id: "deskfin-about",
+          label: `About ${APP_NAME}`,
+          click: () => runMenuAction("About dialog", showAboutDialog),
+        },
       ],
     },
     {
@@ -1372,9 +1583,25 @@ function installMenu(): void {
     },
     {
       label: "Diagnostics",
-      enabled: Boolean(serverUrl),
       submenu: [
-        { label: "Show codec report", click: () => collectCodecReport(true) },
+        {
+          id: "deskfin-copy-diagnostics",
+          label: "Copy diagnostics",
+          click: () => runMenuAction("Copy diagnostics", copyDiagnostics),
+        },
+        {
+          id: "deskfin-open-log-folder",
+          label: "Open log folder",
+          enabled: Boolean(logDirectory && logFilePath),
+          click: () => runMenuAction("Open log folder", openLogFolder),
+        },
+        { type: "separator" },
+        {
+          label: "Show codec report",
+          enabled: Boolean(serverUrl),
+          click: () =>
+            runMenuAction("Codec report", () => collectCodecReport(true)),
+        },
       ],
     },
   );
@@ -1526,6 +1753,10 @@ app.whenReady().then(async () => {
   );
   registerIpc();
   installMenu();
+  if (smokeDiagnostics) {
+    runDiagnosticsSmoke();
+    return;
+  }
   if (smokeSettings) {
     runSettingsSmoke();
     return;
