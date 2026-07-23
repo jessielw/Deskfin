@@ -1,0 +1,58 @@
+name: Build release archives
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Git tag and GitHub Release to build for
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows x64
+          - os: macos-15
+            label: macOS arm64
+          - os: macos-15-intel
+            label: macOS x64
+          - os: ubuntu-22.04
+            label: Linux x64
+    runs-on: ${{ matrix.os }}
+    env:
+      DESKFIN_RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+      - run: npm ci
+      - run: npm run validate
+      - run: npm run make:archive
+      - name: Keep release archives from failed uploads
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deskfin-${{ matrix.os }}-release-output
+          path: out/release/*
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Attach archives to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "$DESKFIN_RELEASE_TAG" out/release/* --clobber
