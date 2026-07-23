@@ -1,0 +1,35 @@
+name: Packaged application artifacts
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: deskfin-windows-x64
+          - os: macos-15
+            artifact: deskfin-macos-arm64
+          - os: macos-15-intel
+            artifact: deskfin-macos-x64
+          - os: ubuntu-22.04
+            artifact: deskfin-linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+      - run: npm ci
+      - run: npm run validate
+      - run: npm run package:dir
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: out/Deskfin-*
+          if-no-files-found: error
+          retention-days: 14

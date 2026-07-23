@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-15
+          - macos-15-intel
+          - ubuntu-22.04
+          - ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run validate
+      - name: Runtime recovery smoke
+        if: runner.os != 'Linux'
+        run: npm run smoke:recovery
+      - name: Runtime recovery smoke
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run smoke:recovery
+      - name: Package and smoke test
+        if: runner.os != 'Linux'
+        run: npm run smoke:packaged
+      - name: Package and smoke test
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run smoke:packaged
