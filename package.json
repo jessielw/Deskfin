@@ -1,10 +1,27 @@
 {
-  "name": "Deskfin",
+  "name": "deskfin",
+  "productName": "Deskfin",
   "version": "0.1.0-alpha.1",
   "private": true,
   "description": "A thin Jellyfin desktop client with Web and MPV playback",
+  "author": "Deskfin contributors",
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://github.com/jessielw/Deskfin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jessielw/Deskfin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jessielw/Deskfin/issues"
+  },
+  "deskfin": {
+    "appId": "io.github.jessielw.deskfin",
+    "executableName": "Deskfin",
+    "category": "public.app-category.entertainment"
+  },
   "main": "build/main/index.js",
   "scripts": {
+    "assets:icons": "node scripts/generate-icons.mjs",
     "build:code": "tsc -p tsconfig.json",
     "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload.js && esbuild src/preload/settings.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/settings-preload.js && esbuild src/preload/servers.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/servers-preload.js",
     "build": "npm run build:code && npm run build:preload",
@@ -26,13 +43,14 @@
     "smoke:server-failure": "electron . --smoke-server-failure --server-url=https://deskfin-invalid.invalid",
     "presmoke:diagnostics": "npm run build",
     "smoke:diagnostics": "electron . --smoke-diagnostics",
-    "prepackage:dir": "npm run build",
+    "prepackage:dir": "npm run assets:icons && npm run build",
     "package:dir": "node scripts/package-app.mjs",
-    "presmoke:packaged": "npm run build",
+    "presmoke:packaged": "npm run assets:icons && npm run build",
     "smoke:packaged": "node scripts/packaged-smoke.mjs",
+    "check:assets": "node scripts/generate-icons.mjs --check",
     "check:types": "tsc -p tsconfig.json --noEmit",
-    "check:js": "node --check src/preload/install-player.js && node --check src/renderer/settings/settings.js && node --check src/renderer/servers/servers.js && node --check scripts/mpv-smoke.js && node --check scripts/package-app.mjs && node --check scripts/packaged-smoke.mjs",
-    "check": "npm run check:types && npm run check:js",
+    "check:js": "node --check src/preload/install-player.js && node --check src/renderer/settings/settings.js && node --check src/renderer/servers/servers.js && node --check scripts/mpv-smoke.js && node --check scripts/generate-icons.mjs && node --check scripts/package-app.mjs && node --check scripts/packaged-smoke.mjs",
+    "check": "npm run check:assets && npm run check:types && npm run check:js",
     "pretest": "npm run build:code",
     "test": "node --test",
     "validate": "npm run check && npm test",
@@ -48,9 +66,11 @@
     "electron": "43.1.1",
     "esbuild": "0.28.1",
     "prettier": "3.9.6",
+    "sharp": "^0.35.3",
     "typescript": "^7.0.2"
   },
   "allowScripts": {
-    "esbuild@0.28.1": true
+    "esbuild@0.28.1": true,
+    "sharp@0.35.3": true
   }
 }
