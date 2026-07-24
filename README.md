@@ -2,9 +2,7 @@
     <img height="180px" alt="Deskfins's logo with name" src="resources/icons/deskfin_with_name.svg" />
 </p>
 
-<p align="center">
-  <picture><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/jessielw/Deskfin/ci.yml?style=flat&logo=github&logoColor=white&label=CI"></picture>
-</p>
+<picture><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/jessielw/Deskfin/ci.yml?style=flat&logo=github&logoColor=white&label=CI"></picture>
 
 # Why Deskfin
 
