@@ -1,3 +1,7 @@
+<p align="center">
+    <img height="100px" alt="Deskfins's logo with name" src="resources/icons/deskfin_with_name.svg" />
+</p>
+
 # Why Deskfin
 
 Jellyfin no longer has an official desktop client. Deskfin is an unofficial
