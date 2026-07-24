@@ -13,23 +13,31 @@ I wanted something deliberately thin: a stable cross-platform desktop wrapper
 around the official Jellyfin Web interface, without taking on the maintenance
 burden of building a second Jellyfin frontend or video engine.
 
-## Electron
+## Why Electron?
 
-I considered a few other approaches first.
+Deskfin began as an exploration of several different desktop technologies before
+settling on Electron.
 
-- **Qt WebEngine / libmpv:** close to the approach used by the former official
-  desktop client. It offered deep integration, but also meant owning a large
-  native playback stack that had become difficult to maintain.
-- **PyWebView:** promising for small packages because it uses each operating
-  system's built-in webview. The trade-off was inconsistent codec support and
-  different injection behavior on every platform.
-- **Rust/Tauri:** appealing for similar reasons, but it runs into the same
-  webview and codec differences.
+* **Qt WebEngine / libmpv:** Similar to the former official Jellyfin desktop
+  client. It provided excellent native integration, but also required a much
+  larger native playback stack that would have increased long-term maintenance.
+* **PyWebView:** Produced very small builds by relying on each operating
+  system's native webview. However, differences in codec support, JavaScript
+  injection, and browser behavior meant additional platform-specific code.
+* **Rust/Tauri:** An attractive option with a small runtime, but it shares the
+  same dependency on system webviews and their platform-specific differences.
 
-Electron was the best fit for the goal: one Chromium runtime that behaves the
-same on Windows, macOS, and Linux, with broader built-in codec support than many
-system webviews. It makes the app larger, but it keeps the behavior predictable
-and avoids platform-specific workarounds.
+Electron provides a consistent Chromium runtime across Windows, macOS, and
+Linux. That allows Deskfin to behave the same on every platform, simplifies
+playback integration, and keeps the codebase focused on Jellyfin rather than
+browser-specific workarounds.
+
+While Electron applications are often associated with large downloads and high
+memory usage, Deskfin is designed to remain lightweight. Compared to some native
+desktop media clients, it has a significantly smaller installation size and
+lower idle memory footprint while still providing a consistent cross-platform
+experience.
+
 
 ## How Deskfin works
 
