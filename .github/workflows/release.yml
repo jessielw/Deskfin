@@ -50,9 +50,11 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          dpkg-deb --contents out/release/Deskfin_*.deb | grep --quiet 'rwsr-xr-x root/root.*opt/Deskfin/chrome-sandbox'
-          dpkg-deb --contents out/release/Deskfin_*.deb | grep --quiet 'usr/bin/deskfin'
-          dpkg-deb --contents out/release/Deskfin_*.deb | grep --quiet 'usr/share/applications/deskfin.desktop'
+          package_contents="$(mktemp)"
+          dpkg-deb --contents out/release/Deskfin_*.deb > "$package_contents"
+          grep --quiet 'rwsr-xr-x root/root.*opt/Deskfin/chrome-sandbox' "$package_contents"
+          grep --quiet 'usr/bin/deskfin' "$package_contents"
+          grep --quiet 'usr/share/applications/deskfin.desktop' "$package_contents"
       - name: Install and launch Debian package
         if: runner.os == 'Linux'
         shell: bash
