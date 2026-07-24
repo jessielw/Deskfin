@@ -67,6 +67,17 @@ function errorCode(error: unknown): string | undefined {
     : undefined;
 }
 
+function canRetryLoad(error: unknown): boolean {
+  const message = errorMessage(error);
+  return [
+    "MPV is not ready",
+    "MPV IPC failed",
+    "MPV IPC closed",
+    "MPV exited",
+    "write EPIPE",
+  ].some((needle) => message.includes(needle));
+}
+
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -115,7 +126,7 @@ export function buildMpvArguments(
 ): string[] {
   const args = [
     "--idle=yes",
-    "--force-window=no",
+    "--force-window=immediate",
     "--keep-open=no",
     "--input-default-bindings=yes",
     "--no-terminal",
@@ -340,12 +351,27 @@ export class MpvController {
     socket.on("data", (chunk) => this.onSocketData(chunk));
     socket.on("error", (error) => {
       if (!this.closing) {
-        this.failPending(new Error(`MPV IPC failed: ${error.message}`));
+        this.onSocketFailure(
+          socket,
+          new Error(`MPV IPC failed: ${error.message}`),
+        );
       }
     });
     socket.on("close", () => {
-      if (this.socket === socket) this.socket = null;
+      if (this.socket === socket && !this.closing) {
+        this.onSocketFailure(socket, new Error("MPV IPC closed"));
+      }
     });
+  }
+
+  onSocketFailure(socket: net.Socket, error: Error): void {
+    if (this.socket !== socket) return;
+    this.lastProcessError = error;
+    this.socket = null;
+    socket.destroy();
+    this.failPending(error);
+    this.terminateProcess();
+    this.removeSocketFile();
   }
 
   onSocketData(chunk: string | Buffer): void {
@@ -471,7 +497,8 @@ export class MpvController {
   }
 
   command(command: MpvCommand): Promise<unknown> {
-    if (!this.socket || this.socket.destroyed) {
+    const socket = this.socket;
+    if (!socket || socket.destroyed) {
       return Promise.reject(new Error("MPV is not ready"));
     }
     const requestId = this.nextRequestId++;
@@ -481,20 +508,20 @@ export class MpvController {
         reject(new Error("MPV command timed out"));
       }, COMMAND_TIMEOUT_MS);
       this.pending.set(requestId, { resolve, reject, timer });
-      this.socket?.write(
+      socket.write(
         `${JSON.stringify({ command, request_id: requestId })}\n`,
         (error) => {
           if (!error) return;
           clearTimeout(timer);
           this.pending.delete(requestId);
+          this.onSocketFailure(socket, error);
           reject(error);
         },
       );
     });
   }
 
-  async load(value: unknown): Promise<true> {
-    const request = normalizeLoadRequest(value, this.serverUrl);
+  async loadRequest(request: MpvLoadRequest): Promise<true> {
     await this.ensureStarted();
     await this.command(["set_property", "fullscreen", request.fullscreen]);
     await this.command(["set_property", "pause", false]);
@@ -517,6 +544,20 @@ export class MpvController {
       throw error;
     }
     return true;
+  }
+
+  async load(value: unknown): Promise<true> {
+    const request = normalizeLoadRequest(value, this.serverUrl);
+    try {
+      return await this.loadRequest(request);
+    } catch (error: unknown) {
+      if (this.closing || !canRetryLoad(error)) throw error;
+      console.warn(
+        "[Deskfin] MPV connection was lost while loading; restarting it once.",
+      );
+      this.teardownConnection();
+      return this.loadRequest(request);
+    }
   }
 
   async execute(name: string, value?: unknown): Promise<true> {

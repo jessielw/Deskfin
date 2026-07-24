@@ -128,6 +128,8 @@ test("forwards Jellyfin controls and native track changes from MPV", () => {
 test("adds the Jellyfin OSC preset without discarding other MPV script options", () => {
   const args = buildMpvArguments("test-ipc", "jellyfin", "jellyfin_dc.lua");
 
+  assert.ok(args.includes("--force-window=immediate"));
+  assert.ok(!args.includes("--force-window=no"));
   assert.ok(args.includes("--osc=yes"));
   assert.ok(args.includes("--osd-on-seek=msg-bar"));
   assert.ok(
@@ -143,6 +145,47 @@ test("adds the Jellyfin OSC preset without discarding other MPV script options",
   );
   assert.ok(!args.some((argument) => argument.startsWith("--script-opts=")));
   assert.ok(args.includes("--script=jellyfin_dc.lua"));
+});
+
+test("cleans up a lost MPV IPC connection before another load", () => {
+  const controller = new MpvController({ serverUrl: "https://media.example" });
+  const child = { exitCode: null, kill: () => {} };
+  const socket = { destroy: () => {}, destroyed: false };
+  controller.child = child;
+  controller.socket = socket;
+
+  controller.onSocketFailure(socket, new Error("MPV IPC failed: write EPIPE"));
+
+  assert.equal(controller.child, null);
+  assert.equal(controller.socket, null);
+  assert.match(controller.status().reason, /EPIPE/);
+});
+
+test("restarts MPV once when a load loses its IPC connection", async () => {
+  const controller = new MpvController({ serverUrl: "https://media.example" });
+  const request = {
+    url: "https://media.example/Videos/1/stream",
+    startSeconds: 0,
+    title: "Example",
+    fullscreen: false,
+    audioTrack: 0,
+    subtitleTrack: 0,
+  };
+  let attempts = 0;
+  let teardownCalls = 0;
+  controller.loadRequest = async () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("write EPIPE");
+    return true;
+  };
+  controller.teardownConnection = () => {
+    teardownCalls += 1;
+  };
+
+  await controller.load(request);
+
+  assert.equal(attempts, 2);
+  assert.equal(teardownCalls, 1);
 });
 
 test("lets user MPV configuration own the presentation", () => {
