@@ -84,6 +84,8 @@ function postInstallFile(executableName) {
   return [
     "#!/bin/sh",
     "set -eu",
+    "chown root:root /opt/Deskfin",
+    "chmod 755 /opt/Deskfin",
     `chown root:root /opt/Deskfin/${executableName}`,
     `chmod 755 /opt/Deskfin/${executableName}`,
     "if [ -e /opt/Deskfin/chrome_crashpad_handler ]; then",
@@ -94,6 +96,15 @@ function postInstallFile(executableName) {
     "chmod 4755 /opt/Deskfin/chrome-sandbox",
     "",
   ].join("\n");
+}
+
+async function normalizeDirectoryModes(directoryPath) {
+  await fsp.chmod(directoryPath, 0o755);
+  const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    await normalizeDirectoryModes(path.join(directoryPath, entry.name));
+  }
 }
 
 async function writeFile(filePath, contents, mode = undefined) {
@@ -141,6 +152,7 @@ export async function makeDeb() {
   await fsp.rm(archivePath, { force: true });
   await fsp.rm(checksumPath, { force: true });
   await fsp.cp(bundlePath, applicationDirectory, { recursive: true });
+  await normalizeDirectoryModes(applicationDirectory);
   await fsp.chmod(path.join(applicationDirectory, executableName), 0o755);
   for (const executable of BUNDLE_EXECUTABLES) {
     const executablePath = path.join(applicationDirectory, executable);

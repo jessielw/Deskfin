@@ -1,7 +1,7 @@
 {
   "name": "deskfin",
   "productName": "Deskfin",
-  "version": "0.1.0-dev.3",
+  "version": "0.1.0-dev.4",
   "private": true,
   "description": "A thin Jellyfin desktop client with Web and MPV playback",
   "author": "Deskfin contributors",
