@@ -43,6 +43,23 @@ jobs:
       - run: npm ci
       - run: npm run validate
       - run: npm run make:archive
+      - name: Build Debian package
+        if: runner.os == 'Linux'
+        run: npm run make:deb
+      - name: Verify Debian package layout
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          dpkg-deb --contents out/release/Deskfin_*.deb | grep --quiet 'rwsr-xr-x root/root.*opt/Deskfin/chrome-sandbox'
+          dpkg-deb --contents out/release/Deskfin_*.deb | grep --quiet 'usr/bin/deskfin'
+          dpkg-deb --contents out/release/Deskfin_*.deb | grep --quiet 'usr/share/applications/deskfin.desktop'
+      - name: Install and launch Debian package
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ./out/release/Deskfin_*.deb
+          timeout 45s xvfb-run --auto-servernum /usr/bin/deskfin --smoke-packaged --smoke-user-data="$(mktemp -d)"
       - name: Keep release archives from failed uploads
         if: always()
         uses: actions/upload-artifact@v4
