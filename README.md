@@ -18,13 +18,13 @@ burden of building a second Jellyfin frontend or video engine.
 Deskfin began as an exploration of several different desktop technologies before
 settling on Electron.
 
-* **Qt WebEngine / libmpv:** Similar to the former official Jellyfin desktop
+- **Qt WebEngine / libmpv:** Similar to the former official Jellyfin desktop
   client. It provided excellent native integration, but also required a much
   larger native playback stack that would have increased long-term maintenance.
-* **PyWebView:** Produced very small builds by relying on each operating
+- **PyWebView:** Produced very small builds by relying on each operating
   system's native webview. However, differences in codec support, JavaScript
   injection, and browser behavior meant additional platform-specific code.
-* **Rust/Tauri:** An attractive option with a small runtime, but it shares the
+- **Rust/Tauri:** An attractive option with a small runtime, but it shares the
   same dependency on system webviews and their platform-specific differences.
 
 Electron provides a consistent Chromium runtime across Windows, macOS, and
@@ -37,7 +37,6 @@ memory usage, Deskfin is designed to remain lightweight. Compared to some native
 desktop media clients, it has a significantly smaller installation size and
 lower idle memory footprint while still providing a consistent cross-platform
 experience.
-
 
 ## How Deskfin works
 
