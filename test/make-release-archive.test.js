@@ -42,8 +42,12 @@ test("accepts optional v prefixes but rejects mismatched release tags", async ()
   const { assertReleaseTagVersion, releaseTagVersion } = await archiveTools();
   assert.equal(releaseTagVersion("v0.1.0-beta.1"), "0.1.0-beta.1");
   assert.equal(releaseTagVersion("0.1.0-beta.1"), "0.1.0-beta.1");
+  assert.equal(releaseTagVersion(" v0.1.0-beta.1 "), "0.1.0-beta.1");
   assert.doesNotThrow(() =>
     assertReleaseTagVersion("0.1.0-beta.1", "v0.1.0-beta.1"),
+  );
+  assert.doesNotThrow(() =>
+    assertReleaseTagVersion("0.1.0-beta.1", " v0.1.0-beta.1 "),
   );
   assert.throws(
     () => assertReleaseTagVersion("0.1.0-beta.1", "v0.1.0-beta.2"),

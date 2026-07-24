@@ -22,14 +22,16 @@ export function releaseArchiveName({ productName, version, platform, arch }) {
 }
 
 export function releaseTagVersion(tag) {
-  return tag.startsWith("v") ? tag.slice(1) : tag;
+  const normalizedTag = tag.trim();
+  return normalizedTag.startsWith("v") ? normalizedTag.slice(1) : normalizedTag;
 }
 
 export function assertReleaseTagVersion(version, tag) {
-  if (!tag) return;
-  if (releaseTagVersion(tag) !== version) {
+  const normalizedTag = tag.trim();
+  if (!normalizedTag) return;
+  if (releaseTagVersion(normalizedTag) !== version) {
     throw new Error(
-      `Release tag ${tag} does not match package.json version ${version}`,
+      `Release tag ${normalizedTag} does not match package.json version ${version}`,
     );
   }
 }
