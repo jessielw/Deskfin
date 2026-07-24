@@ -2,6 +2,12 @@
     <img height="180px" alt="Deskfins's logo with name" src="resources/icons/deskfin_with_name.svg" />
 </p>
 
+<p align="center">
+<picture><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/jessielw/deskfin/.github%2Fworkflows%2Fci.yml?style=flat&logo=github&logoColor=white&label=CI"></picture>
+<picture><img alt="Packaged Artifacts" src="https://img.shields.io/github/actions/workflow/status/jessielw/deskfin/.github%2Fworkflows%2Fpackaged-artifacts.yml?style=flat&logo=docker&logoColor=white&label=Packaged%20Artifacts"></picture>
+<picture><img alt="Release" src="https://img.shields.io/github/actions/workflow/status/jessielw/deskfin/.github%2Fworkflows%2Frelease.yml?style=flat&logo=svelte&logoColor=white&label=Release"></picture>
+</p>
+
 # Why Deskfin
 
 Jellyfin no longer has an official desktop client. Deskfin is an unofficial
