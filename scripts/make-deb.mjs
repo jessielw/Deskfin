@@ -10,6 +10,7 @@ const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(scriptPath), "..");
 const PACKAGE_NAME = "deskfin";
 const ARCHITECTURE = "amd64";
+const BUNDLE_EXECUTABLES = ["chrome_crashpad_handler"];
 
 export function debArtifactName(productName, version) {
   return `${productName}_${version}_${ARCHITECTURE}.deb`;
@@ -124,6 +125,17 @@ export async function makeDeb() {
   await fsp.rm(archivePath, { force: true });
   await fsp.rm(checksumPath, { force: true });
   await fsp.cp(bundlePath, applicationDirectory, { recursive: true });
+  await fsp.chmod(path.join(applicationDirectory, executableName), 0o755);
+  for (const executable of BUNDLE_EXECUTABLES) {
+    const executablePath = path.join(applicationDirectory, executable);
+    try {
+      await fsp.chmod(executablePath, 0o755);
+    } catch (error) {
+      if (error && typeof error === "object" && error.code === "ENOENT")
+        continue;
+      throw error;
+    }
+  }
   await fsp.chmod(sandboxPath, 0o4755);
   await writeFile(
     path.join(stagingDirectory, "DEBIAN", "control"),
