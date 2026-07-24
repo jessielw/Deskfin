@@ -80,6 +80,22 @@ function launcherFile(executableName) {
   return `#!/bin/sh\nexec /opt/Deskfin/${executableName} "$@"\n`;
 }
 
+function postInstallFile(executableName) {
+  return [
+    "#!/bin/sh",
+    "set -eu",
+    `chown root:root /opt/Deskfin/${executableName}`,
+    `chmod 755 /opt/Deskfin/${executableName}`,
+    "if [ -e /opt/Deskfin/chrome_crashpad_handler ]; then",
+    "  chown root:root /opt/Deskfin/chrome_crashpad_handler",
+    "  chmod 755 /opt/Deskfin/chrome_crashpad_handler",
+    "fi",
+    "chown root:root /opt/Deskfin/chrome-sandbox",
+    "chmod 4755 /opt/Deskfin/chrome-sandbox",
+    "",
+  ].join("\n");
+}
+
 async function writeFile(filePath, contents, mode = undefined) {
   await fsp.mkdir(path.dirname(filePath), { recursive: true });
   await fsp.writeFile(filePath, contents, "utf8");
@@ -140,6 +156,11 @@ export async function makeDeb() {
   await writeFile(
     path.join(stagingDirectory, "DEBIAN", "control"),
     controlFile(version, description),
+  );
+  await writeFile(
+    path.join(stagingDirectory, "DEBIAN", "postinst"),
+    postInstallFile(executableName),
+    0o755,
   );
   await writeFile(
     path.join(stagingDirectory, "usr", "bin", PACKAGE_NAME),

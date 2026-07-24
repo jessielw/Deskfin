@@ -62,6 +62,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes ./out/release/Deskfin_*.deb
+          stat --format='%A %U:%G %n' /opt/Deskfin/Deskfin /opt/Deskfin/chrome-sandbox
           timeout 45s xvfb-run --auto-servernum /usr/bin/deskfin --smoke-packaged --smoke-user-data="$(mktemp -d)"
       - name: Keep release archives from failed uploads
         if: always()
