@@ -57,7 +57,7 @@ export async function packageDeskfin() {
     icon: iconPath,
     win32metadata: {
       CompanyName: "Deskfin contributors",
-      FileDescription: packageJson.description,
+      FileDescription: productName,
       InternalName: product.executableName,
       OriginalFilename: `${product.executableName}.exe`,
       ProductName: productName,
