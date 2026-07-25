@@ -36,6 +36,7 @@ import {
 import { inspectMpvExecutable } from "./playback/mpv-diagnostics";
 import {
   resolveMpvExecutable,
+  resolveMpvExecutableAlias,
   type MpvExecutableResolution,
 } from "./playback/mpv-resolution";
 import {
@@ -148,6 +149,7 @@ let connectionError: string | null = null;
 let mpvExecutable = "mpv";
 let mpvExecutableResolution: MpvExecutableResolution = {
   executable: "mpv",
+  provider: "mpv",
   source: "unresolved",
   ignoredConfiguredPath: null,
 };
@@ -501,7 +503,10 @@ function testMpvExecutable(candidate: unknown): Promise<MpvDiagnostic> {
   }
   const executable = candidate.trim();
   if (!executable) return currentMpvDiagnostic(true);
-  return inspectMpvExecutable(executable, "settings");
+  return inspectMpvExecutable(
+    resolveMpvExecutableAlias(executable),
+    "settings",
+  );
 }
 
 function initializeRuntime(): void {
@@ -611,6 +616,7 @@ function createMpvController(): MpvController {
   mpvController = new MpvController({
     serverUrl: requiredPath(serverUrl, "Jellyfin server URL"),
     executable: mpvExecutable,
+    provider: mpvExecutableResolution.provider,
     presentation: mpvPresentation,
     integrationScript: mpvIntegrationScript,
     eventSink: emitMpvEvent,
@@ -1938,7 +1944,7 @@ function registerIpc(): void {
     async (event: IpcMainInvokeEvent) => {
       assertSettingsSender(event);
       const options: OpenDialogOptions = {
-        title: "Select MPV executable",
+        title: "Select MPV or mpv.net executable",
         properties: ["openFile"],
       };
       if (process.platform === "win32") {
@@ -1967,6 +1973,7 @@ function registerIpc(): void {
     const diagnostic = await currentMpvDiagnostic();
     const status = mpvController?.status() || {
       ready: false,
+      provider: mpvExecutableResolution.provider,
       executable: mpvExecutable,
       presentation: mpvPresentation,
       reason: "",
@@ -1975,6 +1982,7 @@ function registerIpc(): void {
       ...status,
       backend: currentMode,
       available: diagnostic.available,
+      provider: diagnostic.provider,
       executable: diagnostic.executable,
       version: diagnostic.version,
       source: diagnostic.source,
@@ -2161,8 +2169,8 @@ async function showAboutDialog(): Promise<void> {
       `Chromium ${process.versions.chrome}`,
       `Node.js ${process.versions.node}`,
       diagnostic.available
-        ? `MPV ${diagnostic.version}${diagnostic.supported ? "" : " (unsupported version)"}`
-        : "MPV not currently available",
+        ? `${diagnostic.provider === "mpv.net" ? "mpv.net" : "MPV"} ${diagnostic.version}${diagnostic.supported ? "" : " (not validated)"}`
+        : "MPV player not currently available",
       `Supported Jellyfin Web: ${COMPATIBILITY.jellyfinWebMinor}.x`,
       `Supported MPV: ${COMPATIBILITY.minimumMpvVersion}+`,
       "",
@@ -2235,6 +2243,7 @@ async function collectDiagnostics(): Promise<string> {
     mpv: {
       available: mpv.available,
       supported: mpv.supported,
+      provider: mpv.provider,
       version: mpv.version,
       source: mpv.source,
       executableName,

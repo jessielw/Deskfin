@@ -10,8 +10,10 @@ import type {
   MpvEventPayload,
   MpvLoadRequest,
   MpvPresentation,
+  MpvProvider,
   MpvStatus,
 } from "../../shared/types";
+import { detectMpvProvider, isMpvProvider } from "./mpv-provider";
 
 const COMMAND_TIMEOUT_MS = 5000;
 const START_TIMEOUT_MS = 5000;
@@ -43,11 +45,13 @@ interface PendingCommand {
   resolve(value: unknown): void;
   reject(reason: unknown): void;
   timer: NodeJS.Timeout;
+  commandName: string;
 }
 
 interface MpvControllerOptions {
   serverUrl: string;
   executable?: string;
+  provider?: MpvProvider;
   presentation?: MpvPresentation;
   integrationScript?: string | null;
   eventSink?: MpvEventSink;
@@ -76,6 +80,10 @@ function canRetryLoad(error: unknown): boolean {
     "MPV exited",
     "write EPIPE",
   ].some((needle) => message.includes(needle));
+}
+
+function isInvalidParameterError(error: unknown): boolean {
+  return errorMessage(error).toLowerCase().includes("invalid parameter");
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -123,15 +131,22 @@ export function buildMpvArguments(
   ipcPath: string,
   presentation: MpvPresentation = "jellyfin",
   integrationScript: string | null = null,
+  provider: MpvProvider = "mpv",
 ): string[] {
   const args = [
     "--idle=yes",
-    "--force-window=immediate",
     "--keep-open=no",
-    "--input-default-bindings=yes",
-    "--no-terminal",
     `--input-ipc-server=${ipcPath}`,
   ];
+  if (provider === "mpv") {
+    args.push(
+      "--input-default-bindings=yes",
+      "--force-window=immediate",
+      "--no-terminal",
+    );
+  } else if (provider === "mpv.net") {
+    args.push("--input-default-bindings=yes", "--process-instance=multi");
+  }
   if (normalizeMpvPresentation(presentation) === "jellyfin") {
     args.push(
       "--osc=yes",
@@ -205,6 +220,7 @@ function connectOnce(ipcPath: string, timeoutMs = 250): Promise<net.Socket> {
 export class MpvController {
   readonly serverUrl: string;
   readonly executable: string;
+  readonly provider: MpvProvider;
   readonly presentation: MpvPresentation;
   readonly integrationScript: string | null;
   readonly eventSink: MpvEventSink;
@@ -220,16 +236,24 @@ export class MpvController {
   pendingLoad: MpvLoadRequest | null = null;
   lastProcessError: Error | null = null;
   ipcPath: string | null = null;
+  legacyLoadfileArguments = false;
 
   constructor({
     serverUrl,
     executable = "mpv",
+    provider,
     presentation = "jellyfin",
     integrationScript = DEFAULT_INTEGRATION_SCRIPT,
     eventSink = () => {},
   }: MpvControllerOptions) {
     this.serverUrl = serverUrl;
     this.executable = executable;
+    this.provider =
+      provider && isMpvProvider(provider)
+        ? provider
+        : detectMpvProvider(executable) === "mpv.net"
+          ? "mpv.net"
+          : "mpv";
     this.presentation = normalizeMpvPresentation(presentation);
     this.integrationScript = integrationScript;
     this.eventSink = eventSink;
@@ -242,6 +266,7 @@ export class MpvController {
   status(): MpvStatus {
     return {
       backend: "mpv",
+      provider: this.provider,
       available: true,
       ready: this.ready,
       executable: this.executable,
@@ -289,6 +314,7 @@ export class MpvController {
       this.ipcPath,
       this.presentation,
       this.integrationScript,
+      this.provider,
     );
     const child = spawn(this.executable, args, {
       shell: false,
@@ -319,9 +345,16 @@ export class MpvController {
 
     if (!this.socket) {
       this.terminateProcess();
+      const earlyExit =
+        child.exitCode == null
+          ? null
+          : new Error(
+              `${this.provider === "mpv.net" ? "mpv.net" : "MPV"} exited before its IPC endpoint was ready (code ${child.exitCode})`,
+            );
       const reason =
         this.lastProcessError ||
         lastConnectionError ||
+        earlyExit ||
         new Error("MPV did not start");
       throw new Error(`Could not start MPV: ${errorMessage(reason)}`);
     }
@@ -403,7 +436,11 @@ export class MpvController {
         clearTimeout(pending.timer);
         this.pending.delete(message.request_id);
         if (message.error && message.error !== "success") {
-          pending.reject(new Error(`MPV command failed: ${message.error}`));
+          pending.reject(
+            new Error(
+              `MPV ${pending.commandName} command failed: ${message.error}`,
+            ),
+          );
         } else {
           pending.resolve(message.data);
         }
@@ -507,7 +544,12 @@ export class MpvController {
         this.pending.delete(requestId);
         reject(new Error("MPV command timed out"));
       }, COMMAND_TIMEOUT_MS);
-      this.pending.set(requestId, { resolve, reject, timer });
+      this.pending.set(requestId, {
+        resolve,
+        reject,
+        timer,
+        commandName: String(command[0] || "unknown"),
+      });
       socket.write(
         `${JSON.stringify({ command, request_id: requestId })}\n`,
         (error) => {
@@ -530,13 +572,34 @@ export class MpvController {
     this.current = true;
     this.replacing = true;
     try {
-      await this.command([
-        "loadfile",
-        request.url,
-        "replace",
-        -1,
-        `start=${request.startSeconds.toFixed(3)}`,
-      ]);
+      const perFileOptions = `start=${request.startSeconds.toFixed(3)}`;
+      if (this.legacyLoadfileArguments) {
+        await this.command([
+          "loadfile",
+          request.url,
+          "replace",
+          perFileOptions,
+        ]);
+      } else {
+        try {
+          await this.command([
+            "loadfile",
+            request.url,
+            "replace",
+            -1,
+            perFileOptions,
+          ]);
+        } catch (error: unknown) {
+          if (!isInvalidParameterError(error)) throw error;
+          await this.command([
+            "loadfile",
+            request.url,
+            "replace",
+            perFileOptions,
+          ]);
+          this.legacyLoadfileArguments = true;
+        }
+      }
     } catch (error: unknown) {
       this.pendingLoad = null;
       this.current = false;

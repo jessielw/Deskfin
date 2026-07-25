@@ -25,6 +25,7 @@ export interface DeskfinDiagnostics {
   mpv: {
     available: boolean;
     supported: boolean;
+    provider: string;
     version: string | null;
     source: string;
     executableName: string;

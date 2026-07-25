@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { MpvExecutableSource } from "../../shared/types";
+import type { MpvExecutableSource, MpvProvider } from "../../shared/types";
+import { detectMpvProvider } from "./mpv-provider";
 
 export interface ResolveMpvExecutableOptions {
   commandLinePath?: string | null;
@@ -14,6 +15,7 @@ export interface ResolveMpvExecutableOptions {
 
 export interface MpvExecutableResolution {
   executable: string;
+  provider: MpvProvider;
   source: MpvExecutableSource;
   ignoredConfiguredPath: string | null;
 }
@@ -81,6 +83,44 @@ export function commonMpvPaths(
       "bin",
       "mpv.exe",
     );
+    append(
+      environmentValue(environment, "LOCALAPPDATA"),
+      "Programs",
+      "mpv.net",
+      "mpvnet.exe",
+    );
+    append(
+      environmentValue(environment, "CHOCOLATEYINSTALL"),
+      "lib",
+      "mpvnet.portable",
+      "tools",
+      "mpvnet.exe",
+    );
+    append(
+      environmentValue(environment, "CHOCOLATEYINSTALL"),
+      "lib",
+      "mpv.net",
+      "tools",
+      "mpvnet.exe",
+    );
+    append(
+      environmentValue(environment, "PROGRAMFILES"),
+      "mpv.net",
+      "mpvnet.exe",
+    );
+    append(
+      environmentValue(environment, "PROGRAMFILES(X86)"),
+      "mpv.net",
+      "mpvnet.exe",
+    );
+    append(
+      environmentValue(environment, "USERPROFILE"),
+      "scoop",
+      "apps",
+      "mpv.net",
+      "current",
+      "mpvnet.exe",
+    );
   } else if (platform === "darwin") {
     paths.push(
       "/Applications/mpv.app/Contents/MacOS/mpv",
@@ -104,14 +144,47 @@ function executableNames(
   environment: NodeJS.ProcessEnv,
 ): string[] {
   if (platform !== "win32") return ["mpv"];
-  const extensions = (
-    environmentValue(environment, "PATHEXT") || ".EXE;.CMD;.BAT"
-  )
+  const extensions = (environmentValue(environment, "PATHEXT") || ".EXE;.COM")
     .split(";")
     .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-  return [...new Set([".exe", ...extensions])].map(
-    (extension) => `mpv${extension}`,
+    .filter((value) => value === ".exe" || value === ".com");
+  const allExtensions = [...new Set([".exe", ".com", ...extensions])];
+  return [
+    ...allExtensions.map((extension) => `mpv${extension}`),
+    ...allExtensions.map((extension) => `mpvnet${extension}`),
+  ];
+}
+
+export function isChocolateyMpvNetShim(candidate: string): boolean {
+  return /[\\/]chocolatey[\\/]bin[\\/]mpvnet(?:\.exe|\.com)?$/i.test(candidate);
+}
+
+export interface ResolveMpvExecutableAliasOptions {
+  environment?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  pathIsFile?: (candidate: string) => boolean;
+  commonPaths?: string[];
+}
+
+export function resolveMpvExecutableAlias(
+  executable: string,
+  {
+    environment = process.env,
+    platform = process.platform,
+    pathIsFile = isExecutableFile,
+    commonPaths = commonMpvPaths(platform, environment),
+  }: ResolveMpvExecutableAliasOptions = {},
+): string {
+  if (platform !== "win32" || !isChocolateyMpvNetShim(executable)) {
+    return executable;
+  }
+  return (
+    commonPaths.find(
+      (candidate) =>
+        !isChocolateyMpvNetShim(candidate) &&
+        detectMpvProvider(candidate) === "mpv.net" &&
+        pathIsFile(candidate),
+    ) || executable
   );
 }
 
@@ -128,13 +201,19 @@ function findMpvOnPath(
     .split(delimiter)
     .map((value) => value.trim().replace(/^"|"$/g, ""))
     .filter(Boolean);
-  for (const directory of directories) {
-    for (const name of executableNames(platform, environment)) {
+  const names = executableNames(platform, environment);
+  let fallbackShim: string | null = null;
+  for (const name of names) {
+    for (const directory of directories) {
       const candidate = candidatePath.join(directory, name);
+      if (name.startsWith("mpvnet") && isChocolateyMpvNetShim(candidate)) {
+        if (pathIsFile(candidate) && !fallbackShim) fallbackShim = candidate;
+        continue;
+      }
       if (pathIsFile(candidate)) return candidate;
     }
   }
-  return null;
+  return fallbackShim;
 }
 
 export function resolveMpvExecutable({
@@ -147,31 +226,53 @@ export function resolveMpvExecutable({
   commonPaths = commonMpvPaths(platform, environment),
 }: ResolveMpvExecutableOptions = {}): MpvExecutableResolution {
   if (commandLinePath) {
+    const executable = resolveMpvExecutableAlias(commandLinePath, {
+      environment,
+      platform,
+      pathIsFile,
+      commonPaths,
+    });
     return {
-      executable: commandLinePath,
+      executable,
+      provider: detectMpvProvider(executable),
       source: "command-line",
       ignoredConfiguredPath: null,
     };
   }
   if (environmentPath) {
+    const executable = resolveMpvExecutableAlias(environmentPath, {
+      environment,
+      platform,
+      pathIsFile,
+      commonPaths,
+    });
     return {
-      executable: environmentPath,
+      executable,
+      provider: detectMpvProvider(executable),
       source: "environment",
       ignoredConfiguredPath: null,
     };
   }
   if (configuredPath && pathIsFile(configuredPath)) {
+    const executable = resolveMpvExecutableAlias(configuredPath, {
+      environment,
+      platform,
+      pathIsFile,
+      commonPaths,
+    });
     return {
-      executable: configuredPath,
+      executable,
+      provider: detectMpvProvider(executable),
       source: "settings",
       ignoredConfiguredPath: null,
     };
   }
 
   const pathExecutable = findMpvOnPath(platform, environment, pathIsFile);
-  if (pathExecutable) {
+  if (pathExecutable && !isChocolateyMpvNetShim(pathExecutable)) {
     return {
       executable: pathExecutable,
+      provider: detectMpvProvider(pathExecutable),
       source: "path",
       ignoredConfiguredPath: configuredPath || null,
     };
@@ -183,13 +284,24 @@ export function resolveMpvExecutable({
   if (commonExecutable) {
     return {
       executable: commonExecutable,
+      provider: detectMpvProvider(commonExecutable),
       source: "common",
+      ignoredConfiguredPath: configuredPath || null,
+    };
+  }
+
+  if (pathExecutable) {
+    return {
+      executable: pathExecutable,
+      provider: detectMpvProvider(pathExecutable),
+      source: "path",
       ignoredConfiguredPath: configuredPath || null,
     };
   }
 
   return {
     executable: "mpv",
+    provider: "mpv",
     source: "unresolved",
     ignoredConfiguredPath: configuredPath || null,
   };

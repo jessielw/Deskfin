@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process";
 import { COMPATIBILITY, supportsMpvVersion } from "../../shared/compatibility";
-import type { MpvDiagnostic, MpvExecutableSource } from "../../shared/types";
+import type {
+  MpvDiagnostic,
+  MpvExecutableSource,
+  MpvProvider,
+} from "../../shared/types";
+import { detectMpvProvider, isMpvProvider } from "./mpv-provider";
+import { isChocolateyMpvNetShim } from "./mpv-resolution";
 
 const MPV_VERSION_TIMEOUT_MS = 3000;
 const MAX_VERSION_OUTPUT_BYTES = 64 * 1024;
@@ -13,25 +19,30 @@ interface ProcessResult {
 
 interface InspectMpvOptions {
   configuredPathIgnored?: boolean;
+  platform?: NodeJS.Platform;
   run?: (executable: string) => Promise<ProcessResult>;
-}
-
-function hasMpvExecutableName(executable: string): boolean {
-  const name = executable.split(/[\\/]/).pop() || "";
-  return /^mpv(?:\.exe|\.com)?$/i.test(name);
 }
 
 export function parseMpvVersionOutput(
   output: string,
+  provider: MpvProvider = "unknown",
 ): { version: string; versionLine: string } | null {
+  const prefix =
+    provider === "mpv.net"
+      ? "mpv(?:\\.net|net)"
+      : provider === "mpv"
+        ? "mpv"
+        : "mpv(?:\\.net|net)?";
+  const versionPattern = new RegExp(
+    `^${prefix}\\s+v?([0-9]+(?:\\.[0-9]+)+(?:[-+._a-z0-9]*)?)`,
+    "i",
+  );
   const versionLine = output
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .find(Boolean);
-  if (!versionLine || !/^mpv\b/i.test(versionLine)) return null;
-  const match = versionLine.match(
-    /^mpv\s+v?([0-9]+(?:\.[0-9]+)+(?:[-+._a-z0-9]*)?)/i,
-  );
+    .find((line) => versionPattern.test(line));
+  if (!versionLine) return null;
+  const match = versionLine.match(versionPattern);
   if (!match?.[1]) return null;
   return { version: match[1], versionLine: versionLine.slice(0, 512) };
 }
@@ -76,26 +87,52 @@ export async function inspectMpvExecutable(
   {
     configuredPathIgnored = false,
     run = runVersionProbe,
+    platform = process.platform,
   }: InspectMpvOptions = {},
 ): Promise<MpvDiagnostic> {
+  const provider = detectMpvProvider(executable);
   const base = {
     executable,
+    provider,
     source,
     supported: false,
     configuredPathIgnored,
   };
-  if (!hasMpvExecutableName(executable)) {
+  if (!isMpvProvider(provider)) {
     return {
       ...base,
       available: false,
       version: null,
       versionLine: null,
-      reason: "Select the MPV executable (mpv, mpv.exe, or mpv.com)",
+      reason:
+        "Select the MPV executable (mpv, mpv.exe, mpv.com, or mpvnet.exe)",
+    };
+  }
+  if (isChocolateyMpvNetShim(executable)) {
+    return {
+      ...base,
+      available: false,
+      version: null,
+      versionLine: null,
+      reason:
+        "This is Chocolatey's mpv.net launcher shim; select the real mpvnet.exe from the package tools directory",
+    };
+  }
+  if (provider === "mpv.net" && platform !== "win32") {
+    return {
+      ...base,
+      available: false,
+      version: null,
+      versionLine: null,
+      reason: "mpv.net is only supported on Windows",
     };
   }
   try {
     const result = await run(executable);
-    const parsed = parseMpvVersionOutput(result.stdout || result.stderr);
+    const parsed = parseMpvVersionOutput(
+      `${result.stdout}\n${result.stderr}`,
+      provider,
+    );
     if (result.code !== 0) {
       const detail = (result.stderr || result.stdout).trim().split(/\r?\n/)[0];
       return {
@@ -118,12 +155,14 @@ export async function inspectMpvExecutable(
           "The selected executable did not return a recognizable MPV version",
       };
     }
+    const versionSupported =
+      provider === "mpv.net" || supportsMpvVersion(parsed.version);
     return {
       ...base,
       available: true,
-      supported: supportsMpvVersion(parsed.version),
+      supported: versionSupported,
       ...parsed,
-      reason: supportsMpvVersion(parsed.version)
+      reason: versionSupported
         ? ""
         : `Deskfin supports MPV ${COMPATIBILITY.minimumMpvVersion} or newer`,
     };

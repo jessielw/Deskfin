@@ -1,5 +1,6 @@
 export type PlaybackMode = "web" | "mpv";
 export type MpvPresentation = "jellyfin" | "user";
+export type MpvProvider = "mpv" | "mpv.net" | "unknown";
 export type MpvExecutableSource =
   | "command-line"
   | "environment"
@@ -11,6 +12,7 @@ export type MpvExecutableSource =
 export interface MpvDiagnostic {
   available: boolean;
   supported: boolean;
+  provider: MpvProvider;
   executable: string;
   source: MpvExecutableSource;
   version: string | null;
@@ -82,6 +84,7 @@ export interface MpvLoadRequest {
 
 export interface MpvStatus {
   backend: PlaybackMode;
+  provider: MpvProvider;
   available: boolean;
   ready: boolean;
   executable: string;
