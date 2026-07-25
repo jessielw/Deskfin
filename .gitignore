@@ -3,5 +3,6 @@ dist/
 out/
 build/
 smoke-user-data-*/
+scraps/
 
 .vscode
