@@ -22,6 +22,7 @@ test("creates a support report without leaking embedded secrets", () => {
     mpv: {
       available: false,
       supported: false,
+      provider: "mpv",
       version: null,
       source: "settings",
       executableName: "mpv.exe",

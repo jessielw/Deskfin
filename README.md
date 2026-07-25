@@ -48,6 +48,11 @@ For videos that benefit from it, Deskfin can instead open an external MPV
 window. It knows about that playback and reports progress, pause, stop, and
 other relevant events back to Jellyfin.
 
+On Windows, [mpv.net](https://github.com/mpvnet-player/mpv.net) can be used as a
+drop-in alternative to MPV. Deskfin looks for regular MPV first, then mpv.net,
+or you can select either executable in Settings. mpv.net keeps its own native
+player window; Deskfin does not modify its configuration files.
+
 ## Why use a separate MPV window?
 
 The point is to get the strengths of MPV without embedding and maintaining a
@@ -57,6 +62,11 @@ doesn't fit the external-player path cleanly.
 
 ## LLM Disclosure
 
-The core of the codebase was written by me. I did use a local LLM as a development aid for tasks such as debugging, grammar and documentation reviews, researching topics I was rusty on, and generating portions of the test suite (because, let's be honest, nobody enjoys writing tests no matter how much they pretend to).
+The core of the codebase was written by me. I did use a local LLM as a development
+aid for tasks such as debugging, grammar and documentation reviews, researching
+topics I was rusty on, and generating portions of the test suite (because, let's be
+honest, nobody enjoys writing tests no matter how much they pretend to).
 
-All architecture, design decisions, implementation, and final code review were performed by me. Any LLM suggestions were reviewed modified where necessary, and verified before being incorporated into the project.
+All architecture, design decisions, implementation, and final code review were
+performed by me. Any LLM suggestions were reviewed modified where necessary, and
+verified before being incorporated into the project.

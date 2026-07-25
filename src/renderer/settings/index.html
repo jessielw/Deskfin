@@ -30,7 +30,7 @@
         </label>
 
         <section id="mpv-settings" aria-labelledby="mpv-heading">
-          <h2 id="mpv-heading">MPV</h2>
+          <h2 id="mpv-heading">MPV / mpv.net</h2>
 
           <label class="field" for="mpv-path">
             <span>Executable</span>
@@ -39,7 +39,7 @@
                 id="mpv-path"
                 name="mpvPath"
                 type="text"
-                placeholder="mpv on PATH"
+                placeholder="mpv or mpvnet on PATH"
                 spellcheck="false"
               />
               <button id="browse-mpv" class="secondary" type="button">
@@ -47,7 +47,8 @@
               </button>
             </span>
             <small
-              >Leave blank to use <code>mpv</code> from the system PATH.</small
+              >Leave blank to use MPV from the system PATH. On Windows, mpv.net
+              is used when regular MPV is not found.</small
             >
           </label>
 
@@ -57,7 +58,7 @@
               <small id="mpv-diagnostic-detail"></small>
             </span>
             <button id="test-mpv" class="secondary" type="button">
-              Test MPV
+              Check Player
             </button>
           </div>
 

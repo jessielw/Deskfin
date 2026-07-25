@@ -17,6 +17,16 @@ test("parses release and development MPV version lines", () => {
     versionLine: "mpv v0.41.0-12-gabc123",
   });
   assert.equal(parseMpvVersionOutput("not-mpv 1.0"), null);
+  assert.deepEqual(
+    parseMpvVersionOutput(
+      "[mpv.net] warning before version\nmpv.net v7.1.2.0\n",
+      "mpv.net",
+    ),
+    {
+      version: "7.1.2.0",
+      versionLine: "mpv.net v7.1.2.0",
+    },
+  );
 });
 
 test("reports a runnable MPV executable and its version", async () => {
@@ -31,6 +41,7 @@ test("reports a runnable MPV executable and its version", async () => {
   assert.deepEqual(diagnostic, {
     available: true,
     supported: true,
+    provider: "mpv",
     executable: "/usr/bin/mpv",
     source: "path",
     version: "0.40.0",
@@ -38,6 +49,44 @@ test("reports a runnable MPV executable and its version", async () => {
     reason: "",
     configuredPathIgnored: true,
   });
+});
+
+test("finds the version when an executable writes other output to stdout", async () => {
+  const diagnostic = await inspectMpvExecutable("mpv", "path", {
+    run: async () => ({
+      code: 0,
+      stdout: "unrelated startup notice\n",
+      stderr: "mpv 0.40.0\n",
+    }),
+  });
+
+  assert.equal(diagnostic.available, true);
+  assert.equal(diagnostic.version, "0.40.0");
+});
+
+test("validates mpv.net with its own version format without starting playback", async () => {
+  const diagnostic = await inspectMpvExecutable(
+    "C:\\tools\\mpvnet.exe",
+    "settings",
+    {
+      platform: "win32",
+      run: async () => ({ code: 0, stdout: "mpv.net v7.1.2.0\n", stderr: "" }),
+    },
+  );
+
+  assert.equal(diagnostic.provider, "mpv.net");
+  assert.equal(diagnostic.available, true);
+  assert.equal(diagnostic.supported, true);
+});
+
+test("rejects mpv.net outside Windows", async () => {
+  const diagnostic = await inspectMpvExecutable("/opt/mpvnet.exe", "settings", {
+    platform: "linux",
+    run: async () => ({ code: 0, stdout: "mpv.net v7.1.2.0\n", stderr: "" }),
+  });
+
+  assert.equal(diagnostic.available, false);
+  assert.match(diagnostic.reason, /only supported on Windows/);
 });
 
 test("reports runnable MPV versions below the supported floor", async () => {
@@ -95,4 +144,23 @@ test("does not launch an arbitrary executable from Settings", async () => {
   assert.equal(launched, false);
   assert.equal(diagnostic.available, false);
   assert.match(diagnostic.reason, /Select the MPV executable/);
+});
+
+test("rejects the Chocolatey mpv.net launcher shim with an actionable reason", async () => {
+  let launched = false;
+  const diagnostic = await inspectMpvExecutable(
+    "C:\\ProgramData\\chocolatey\\bin\\mpvnet.exe",
+    "settings",
+    {
+      platform: "win32",
+      run: async () => {
+        launched = true;
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  );
+
+  assert.equal(launched, false);
+  assert.equal(diagnostic.available, false);
+  assert.match(diagnostic.reason, /Chocolatey's mpv\.net launcher shim/);
 });

@@ -5,7 +5,7 @@ const { MpvController } = require("../build/main/playback/mpv-controller");
 async function main() {
   const events = [];
   const controller = new MpvController({
-    serverUrl: "http://127.0.0.1:8096",
+    serverUrl: "http://127.0.0.1:9",
     executable: process.env.MPV_PATH || "mpv",
     eventSink: (name, payload) => events.push({ name, payload }),
   });
@@ -23,6 +23,17 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 50));
     await controller.execute("fullscreen", false);
     await new Promise((resolve) => setTimeout(resolve, 50));
+    await controller.load({
+      url: "http://127.0.0.1:9/deskfin-mpv-smoke",
+      startSeconds: 1.25,
+      title: "Deskfin MPV smoke test",
+      fullscreen: false,
+      audioTrack: 0,
+      subtitleTrack: 0,
+      externalAudioUrl: null,
+      externalSubtitleUrl: null,
+    });
+    await controller.execute("stop");
     const fullscreenValues = events
       .filter((event) => event.name === "fullscreen")
       .map((event) => event.payload.value);
@@ -47,6 +58,7 @@ async function main() {
     console.log("[Deskfin] MPV fullscreen state is synchronized");
     console.log("[Deskfin] MPV native OSD commands are accepted");
     console.log("[Deskfin] MPV-to-Jellyfin control messages are accepted");
+    console.log("[Deskfin] MPV loadfile command is accepted");
   } finally {
     controller.close();
   }

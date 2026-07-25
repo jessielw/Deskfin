@@ -147,6 +147,115 @@ test("adds the Jellyfin OSC preset without discarding other MPV script options",
   assert.ok(args.includes("--script=jellyfin_dc.lua"));
 });
 
+test("uses a dedicated mpv.net process profile while retaining Deskfin controls", () => {
+  const args = buildMpvArguments(
+    "test-ipc",
+    "jellyfin",
+    "jellyfin_dc.lua",
+    "mpv.net",
+  );
+
+  assert.ok(args.includes("--process-instance=multi"));
+  assert.ok(!args.includes("--force-window=immediate"));
+  assert.ok(!args.includes("--no-terminal"));
+  assert.ok(args.includes("--input-ipc-server=test-ipc"));
+  assert.ok(args.includes("--osc=yes"));
+  assert.ok(args.includes("--script=jellyfin_dc.lua"));
+  assert.equal(
+    new MpvController({
+      serverUrl: "https://media.example",
+      executable: "C:\\tools\\mpvnet.exe",
+    }).status().provider,
+    "mpv.net",
+  );
+});
+
+test("falls back to the pre-0.38 loadfile arguments and remembers the capability", async () => {
+  const controller = new MpvController({
+    serverUrl: "https://media.example",
+    executable: "C:\\tools\\mpvnet.exe",
+  });
+  const commands = [];
+  controller.ensureStarted = async () => {};
+  controller.command = async (command) => {
+    commands.push(command);
+    if (command[0] === "loadfile" && command[3] === -1) {
+      throw new Error("MPV loadfile command failed: invalid parameter");
+    }
+  };
+  const request = {
+    url: "https://media.example/Videos/1/stream",
+    startSeconds: 12.5,
+    title: "Example",
+    fullscreen: false,
+    audioTrack: 0,
+    subtitleTrack: 0,
+    externalAudioUrl: null,
+    externalSubtitleUrl: null,
+  };
+
+  await controller.loadRequest(request);
+  assert.deepEqual(
+    commands.filter((command) => command[0] === "loadfile"),
+    [
+      [
+        "loadfile",
+        "https://media.example/Videos/1/stream",
+        "replace",
+        -1,
+        "start=12.500",
+      ],
+      [
+        "loadfile",
+        "https://media.example/Videos/1/stream",
+        "replace",
+        "start=12.500",
+      ],
+    ],
+  );
+
+  commands.length = 0;
+  await controller.loadRequest({ ...request, startSeconds: 20 });
+  assert.deepEqual(
+    commands.filter((command) => command[0] === "loadfile"),
+    [
+      [
+        "loadfile",
+        "https://media.example/Videos/1/stream",
+        "replace",
+        "start=20.000",
+      ],
+    ],
+  );
+});
+
+test("does not remember legacy loadfile arguments when the retry also fails", async () => {
+  const controller = new MpvController({
+    serverUrl: "https://media.example",
+  });
+  controller.ensureStarted = async () => {};
+  controller.command = async (command) => {
+    if (command[0] === "loadfile") {
+      throw new Error("MPV loadfile command failed: invalid parameter");
+    }
+  };
+
+  await assert.rejects(
+    controller.loadRequest({
+      url: "https://media.example/Videos/1/stream",
+      startSeconds: 0,
+      title: "Example",
+      fullscreen: false,
+      audioTrack: 0,
+      subtitleTrack: 0,
+      externalAudioUrl: null,
+      externalSubtitleUrl: null,
+    }),
+    /invalid parameter/,
+  );
+  assert.equal(controller.legacyLoadfileArguments, false);
+});
+
 test("cleans up a lost MPV IPC connection before another load", () => {
   const controller = new MpvController({ serverUrl: "https://media.example" });
   const child = { exitCode: null, kill: () => {} };

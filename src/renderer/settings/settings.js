@@ -55,8 +55,9 @@ function mpvSourceLabel(source) {
 function renderMpvDiagnostic(diagnostic) {
   if (!diagnostic) {
     mpvDiagnostic.dataset.kind = "pending";
-    mpvDiagnosticTitle.textContent = "MPV selection not tested";
-    mpvDiagnosticDetail.textContent = "Use Test MPV to verify this executable.";
+    mpvDiagnosticTitle.textContent = "Player selection not checked";
+    mpvDiagnosticDetail.textContent =
+      "Use Check Player to verify this executable.";
     return;
   }
 
@@ -68,9 +69,9 @@ function renderMpvDiagnostic(diagnostic) {
         : "error";
   mpvDiagnosticTitle.textContent = diagnostic.available
     ? diagnostic.supported
-      ? `MPV ${diagnostic.version} is available`
-      : `MPV ${diagnostic.version} is outside the supported range`
-    : "MPV is unavailable";
+      ? `${diagnostic.provider === "mpv.net" ? "mpv.net" : "MPV"} ${diagnostic.version} is available`
+      : `${diagnostic.provider === "mpv.net" ? "mpv.net" : "MPV"} ${diagnostic.version} could not be validated`
+    : "MPV player is unavailable";
   const source = `${mpvSourceLabel(diagnostic.source)}: ${diagnostic.executable}`;
   const ignored = diagnostic.configuredPathIgnored
     ? "The saved path was unavailable; Deskfin selected a fallback. "
@@ -114,23 +115,26 @@ browseMpv.addEventListener("click", async () => {
 });
 
 testMpv.addEventListener("click", async () => {
-  setStatus("Testing MPV...", "pending");
+  setStatus("Checking player...", "pending");
   setBusy(true);
   try {
     const diagnostic = await window.settingsApi.testMpv(mpvPath.value);
     renderMpvDiagnostic(diagnostic);
     if (diagnostic.available && diagnostic.supported) {
-      setStatus(`MPV ${diagnostic.version} started successfully.`, "success");
+      setStatus(
+        `${diagnostic.provider === "mpv.net" ? "mpv.net" : "MPV"} ${diagnostic.version} executable check passed.`,
+        "success",
+      );
     } else if (diagnostic.available) {
       setStatus(
-        `MPV ${diagnostic.version} runs, but ${diagnostic.reason.toLowerCase()}.`,
+        `${diagnostic.provider === "mpv.net" ? "mpv.net" : "MPV"} ${diagnostic.version} runs, but ${diagnostic.reason.toLowerCase()}.`,
       );
     } else {
-      setStatus(`MPV test failed: ${diagnostic.reason}`);
+      setStatus(`Player check failed: ${diagnostic.reason}`);
     }
   } catch (error) {
     renderMpvDiagnostic(null);
-    setStatus(`Could not test MPV: ${errorMessage(error)}`);
+    setStatus(`Could not check player: ${errorMessage(error)}`);
   } finally {
     setBusy(false);
   }
