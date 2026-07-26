@@ -256,6 +256,88 @@ function installPlayer(config) {
     }
   }
 
+  function queueEntryIdentity(entry) {
+    const item = entry?.Item || entry?.item || entry;
+    return {
+      playlistItemId: String(
+        entry?.PlaylistItemId ||
+          entry?.playlistItemId ||
+          item?.PlaylistItemId ||
+          item?.playlistItemId ||
+          "",
+      ),
+      itemId: String(item?.Id || item?.id || ""),
+    };
+  }
+
+  function navigationFromPlaylist(payload, options, currentIndex) {
+    const playlist = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.Items)
+        ? payload.Items
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : [];
+    if (playlist.length < 2) return { previous: false, next: false };
+
+    if (
+      Number.isInteger(currentIndex) &&
+      currentIndex >= 0 &&
+      currentIndex < playlist.length
+    ) {
+      return {
+        previous: currentIndex > 0,
+        next: currentIndex < playlist.length - 1,
+      };
+    }
+
+    const currentPlaylistItemId = String(
+      options?.playlistItemId ||
+        options?.PlaylistItemId ||
+        options?.item?.PlaylistItemId ||
+        options?.item?.playlistItemId ||
+        "",
+    );
+    let matches = [];
+    if (currentPlaylistItemId) {
+      matches = playlist
+        .map((entry, index) => ({ ...queueEntryIdentity(entry), index }))
+        .filter((entry) => entry.playlistItemId === currentPlaylistItemId);
+    }
+
+    if (matches.length !== 1) {
+      const currentItemId = String(options?.item?.Id || "");
+      if (!currentItemId) return { previous: false, next: false };
+      matches = playlist
+        .map((entry, index) => ({ ...queueEntryIdentity(entry), index }))
+        .filter((entry) => entry.itemId === currentItemId);
+    }
+    if (matches.length !== 1) return { previous: false, next: false };
+
+    const index = matches[0].index;
+    return {
+      previous: index > 0,
+      next: index < playlist.length - 1,
+    };
+  }
+
+  async function getNavigationState(playbackManager, player, options) {
+    if (typeof playbackManager?.getPlaylist !== "function") {
+      return { previous: false, next: false };
+    }
+    try {
+      const playlist = await playbackManager.getPlaylist(player);
+      const currentIndex =
+        typeof playbackManager.getCurrentPlaylistIndex === "function"
+          ? playbackManager.getCurrentPlaylistIndex(player)
+          : null;
+      return navigationFromPlaylist(playlist, options, currentIndex);
+    } catch (error) {
+      console.debug("[Deskfin] Jellyfin playlist unavailable:", error);
+      return { previous: false, next: false };
+    }
+  }
+
   function playbackTitle(options) {
     const item = options.item || {};
     const fallback = options.title || item.Name || "";
@@ -422,7 +504,21 @@ function installPlayer(config) {
       this._loadRequest = null;
       this._shutdownRequestId = null;
       this._playGeneration = 0;
+      this._navigationTimer = null;
+      this._navigation = { previous: false, next: false };
       this._wireBridge();
+      if (typeof this.events?.on === "function") {
+        for (const eventName of [
+          "playlistitemadd",
+          "playlistitemremove",
+          "playlistitemmove",
+          "shufflequeuemodechange",
+        ]) {
+          this.events.on(this, eventName, () =>
+            this._scheduleNavigationRefresh(),
+          );
+        }
+      }
     }
 
     _wireBridge() {
@@ -430,6 +526,7 @@ function installPlayer(config) {
         if (!this._currentSrc) return;
         this._paused = false;
         this.events.trigger(this, "playing");
+        this._scheduleNavigationRefresh();
       });
       bridge.on("paused", (payload) => {
         const paused = Boolean(payload?.value);
@@ -506,6 +603,7 @@ function installPlayer(config) {
       this.subtitleStreamIndex =
         options.mediaSource?.DefaultSubtitleStreamIndex ?? -1;
       this._failurePending = false;
+      this._navigation = { previous: false, next: false };
       const playGeneration = ++this._playGeneration;
       const segmentsPromise = fetchMediaSegments(options.item);
       try {
@@ -519,6 +617,7 @@ function installPlayer(config) {
           ...selectedTracks(options),
         };
         await invoke("load", this._loadRequest);
+        this._scheduleNavigationRefresh(options, playGeneration);
         segmentsPromise
           .then((segments) => {
             if (
@@ -551,9 +650,43 @@ function installPlayer(config) {
       this._options = null;
       this._loadRequest = null;
       this._failurePending = false;
+      if (this._navigationTimer) clearTimeout(this._navigationTimer);
+      this._navigationTimer = null;
+      this._navigation = { previous: false, next: false };
       this._playGeneration += 1;
       if (activeMpvPlayer === this) activeMpvPlayer = null;
       this.events.trigger(this, "stopped", [{ src }]);
+    }
+
+    _scheduleNavigationRefresh(
+      options = this._options,
+      playGeneration = this._playGeneration,
+    ) {
+      if (!options || !this._currentSrc) return;
+      if (this._navigationTimer) clearTimeout(this._navigationTimer);
+      this._navigationTimer = setTimeout(() => {
+        this._navigationTimer = null;
+        getNavigationState(this.playbackManager, this, options)
+          .then((navigation) => {
+            if (
+              this._options !== options ||
+              this._playGeneration !== playGeneration ||
+              !this._currentSrc ||
+              this._failurePending
+            ) {
+              return;
+            }
+            this._navigation = navigation;
+            if (typeof bridge.setNavigation !== "function") return;
+            return invoke("setNavigation", navigation);
+          })
+          .catch((error) => {
+            console.debug(
+              "[Deskfin] Could not pass playlist state to MPV:",
+              error,
+            );
+          });
+      }, 0);
     }
 
     async _prepareForShutdown(requestId) {
@@ -601,8 +734,10 @@ function installPlayer(config) {
     }
 
     _changeQueueItem(method) {
+      const direction = method === "nextTrack" ? "next" : "previous";
       if (
         !this._currentSrc ||
+        !this._navigation[direction] ||
         typeof this.playbackManager?.[method] !== "function"
       )
         return;
@@ -646,6 +781,9 @@ function installPlayer(config) {
       this._failurePending = false;
       this._loadRequest.startSeconds = this._currentTime / 1000;
       await invoke("load", this._loadRequest);
+      if (typeof bridge.setNavigation === "function") {
+        await invoke("setNavigation", this._navigation);
+      }
     }
 
     async _playHere(itemUrl) {

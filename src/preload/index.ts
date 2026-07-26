@@ -94,6 +94,8 @@ const desktopBridge: DesktopBridge = {
     ipcRenderer.invoke("jdc:mpv:setSubtitleTrack", track),
   setSegments: (segments) =>
     ipcRenderer.invoke("jdc:mpv:setSegments", segments),
+  setNavigation: (navigation) =>
+    ipcRenderer.invoke("jdc:mpv:setNavigation", navigation),
   setFullscreen: (fullscreen) =>
     ipcRenderer.invoke("jdc:mpv:setFullscreen", fullscreen),
   shutdownReady: (requestId) =>

@@ -9,6 +9,7 @@ import type {
   MpvEventName,
   MpvEventPayload,
   MpvLoadRequest,
+  MpvNavigationState,
   MpvPresentation,
   MpvProvider,
   MpvSegment,
@@ -162,6 +163,24 @@ function normalizeSegments(value: unknown): MpvSegment[] {
     .sort((left, right) => left.startSeconds - right.startSeconds);
 }
 
+function normalizeNavigation(value: unknown): MpvNavigationState {
+  if (!isRecord(value)) {
+    throw new Error("navigation must be an object");
+  }
+  if (typeof value.previous !== "boolean" || typeof value.next !== "boolean") {
+    throw new Error("navigation previous and next must be booleans");
+  }
+  return {
+    previous: value.previous,
+    next: value.next,
+  };
+}
+
+const EMPTY_NAVIGATION: Readonly<MpvNavigationState> = {
+  previous: false,
+  next: false,
+};
+
 export function normalizeMpvPresentation(
   value: unknown = "jellyfin",
 ): MpvPresentation {
@@ -280,6 +299,7 @@ export class MpvController {
   replacing = false;
   pendingLoad: MpvLoadRequest | null = null;
   pendingSegments: MpvSegment[] = [];
+  pendingNavigation: MpvNavigationState = { ...EMPTY_NAVIGATION };
   fileLoaded = false;
   lastProcessError: Error | null = null;
   ipcPath: string | null = null;
@@ -499,11 +519,15 @@ export class MpvController {
       const args = Array.isArray(message.args) ? message.args : [];
       const namespace = args[0];
       const action = args[1];
+      let navigationAction: "next" | "previous" | null = null;
+      if (action === "next") navigationAction = "next";
+      if (action === "previous") navigationAction = "previous";
       if (
         namespace === "jellyfin-dc-control" &&
-        (action === "next" || action === "previous")
+        navigationAction &&
+        this.pendingNavigation[navigationAction]
       ) {
-        this.emit(action);
+        this.emit(navigationAction);
       }
       return;
     }
@@ -519,6 +543,7 @@ export class MpvController {
       this.replacing = false;
       this.fileLoaded = false;
       this.pendingSegments = [];
+      this.pendingNavigation = { ...EMPTY_NAVIGATION };
       this.pendingLoad = null;
       if (!wasCurrent) return;
       if (message.reason === "error") {
@@ -566,6 +591,7 @@ export class MpvController {
         await this.command(["set_property", "sid", request.subtitleTrack]);
       }
       this.fileLoaded = true;
+      await this.sendNavigation();
       await this.sendSegments();
       this.emit("loaded");
       if (this.presentation === "jellyfin") {
@@ -597,6 +623,21 @@ export class MpvController {
       "script-message",
       "jellyfin-dc-segments",
       JSON.stringify(this.pendingSegments),
+    ]);
+  }
+
+  async setNavigation(value: unknown): Promise<true> {
+    this.pendingNavigation = normalizeNavigation(value);
+    if (!this.current || !this.ready || !this.fileLoaded) return true;
+    await this.sendNavigation();
+    return true;
+  }
+
+  async sendNavigation(): Promise<void> {
+    await this.command([
+      "script-message",
+      "jellyfin-dc-navigation",
+      JSON.stringify(this.pendingNavigation),
     ]);
   }
 
@@ -637,6 +678,7 @@ export class MpvController {
     await this.command(["set_property", "force-media-title", request.title]);
     this.pendingLoad = request;
     this.pendingSegments = [];
+    this.pendingNavigation = { ...EMPTY_NAVIGATION };
     this.fileLoaded = false;
     this.current = true;
     this.replacing = true;
@@ -698,6 +740,7 @@ export class MpvController {
       this.replacing = false;
       this.fileLoaded = false;
       this.pendingSegments = [];
+      this.pendingNavigation = { ...EMPTY_NAVIGATION };
       this.pendingLoad = null;
       return true;
     }
@@ -751,6 +794,7 @@ export class MpvController {
       this.replacing = false;
       this.fileLoaded = false;
       this.pendingSegments = [];
+      this.pendingNavigation = { ...EMPTY_NAVIGATION };
       this.pendingLoad = null;
     }
     await this.command(makeCommand());
@@ -776,6 +820,7 @@ export class MpvController {
     this.replacing = false;
     this.fileLoaded = false;
     this.pendingSegments = [];
+    this.pendingNavigation = { ...EMPTY_NAVIGATION };
     this.pendingLoad = null;
     if (this.socket) this.socket.destroy();
     this.socket = null;
@@ -836,6 +881,9 @@ export class MpvController {
     this.current = false;
     this.replacing = false;
     this.pendingLoad = null;
+    this.pendingSegments = [];
+    this.pendingNavigation = { ...EMPTY_NAVIGATION };
+    this.fileLoaded = false;
     this.teardownConnection();
     this.emit("ready", { ready: false });
   }

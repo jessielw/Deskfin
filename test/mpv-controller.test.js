@@ -55,7 +55,6 @@ test("forwards observed MPV fullscreen state", () => {
     serverUrl: "https://media.example",
     eventSink: (name, payload) => events.push({ name, payload }),
   });
-
   controller.onMessage({
     event: "property-change",
     name: "fullscreen",
@@ -110,6 +109,7 @@ test("forwards Jellyfin controls and native track changes from MPV", () => {
     serverUrl: "https://media.example",
     eventSink: (name, payload) => events.push({ name, payload }),
   });
+  controller.pendingNavigation = { previous: false, next: true };
 
   controller.onMessage({
     event: "client-message",
@@ -361,4 +361,54 @@ test("passes valid MediaSegments to the integration script", async () => {
       ]),
     ],
   ]);
+});
+
+test("passes validated playlist navigation to the integration script", async () => {
+  const commands = [];
+  const controller = new MpvController({ serverUrl: "https://media.example" });
+  controller.current = true;
+  controller.fileLoaded = true;
+  controller.child = { exitCode: null };
+  controller.socket = { destroyed: false };
+  controller.command = async (command) => {
+    commands.push(command);
+  };
+
+  await controller.setNavigation({ previous: false, next: true });
+
+  assert.deepEqual(commands, [
+    [
+      "script-message",
+      "jellyfin-dc-navigation",
+      JSON.stringify({ previous: false, next: true }),
+    ],
+  ]);
+  await assert.rejects(
+    controller.setNavigation({ previous: "yes", next: true }),
+    /must be booleans/,
+  );
+});
+
+test("ignores MPV navigation messages that are unavailable", () => {
+  const events = [];
+  const controller = new MpvController({
+    serverUrl: "https://media.example",
+    eventSink: (name) => events.push(name),
+  });
+
+  controller.onMessage({
+    event: "client-message",
+    args: ["jellyfin-dc-control", "next"],
+  });
+  controller.pendingNavigation = { previous: true, next: false };
+  controller.onMessage({
+    event: "client-message",
+    args: ["jellyfin-dc-control", "next"],
+  });
+  controller.onMessage({
+    event: "client-message",
+    args: ["jellyfin-dc-control", "previous"],
+  });
+
+  assert.deepEqual(events, ["previous"]);
 });

@@ -26,6 +26,10 @@ local click_action = nil
 local keyboard_binding_active = false
 
 local file_active = false
+local navigation_available = {
+    previous = false,
+    next = false,
+}
 local navigation_bounds = {}
 local navigation_hovered = nil
 local navigation_visibility = 0
@@ -237,7 +241,14 @@ render_overlay = function()
     end
 
     navigation_bounds = {}
-    if file_active then
+    local navigation_actions = {}
+    if navigation_available.previous then
+        table.insert(navigation_actions, 'previous')
+    end
+    if navigation_available.next then
+        table.insert(navigation_actions, 'next')
+    end
+    if file_active and #navigation_actions > 0 then
         local nav_size = math.floor(40 * scale)
         local nav_gap = math.floor(8 * scale)
         local skip_gap = math.floor(12 * scale)
@@ -261,21 +272,17 @@ render_overlay = function()
                 - nav_size
             )
         end
-        next_x = math.max(side_margin + nav_size + nav_gap, next_x)
-        local previous_x = next_x - nav_gap - nav_size
-
-        navigation_bounds.previous = {
-            x1 = previous_x,
-            y1 = nav_y,
-            x2 = previous_x + nav_size,
-            y2 = nav_y + nav_size,
-        }
-        navigation_bounds.next = {
-            x1 = next_x,
-            y1 = nav_y,
-            x2 = next_x + nav_size,
-            y2 = nav_y + nav_size,
-        }
+        next_x = math.max(side_margin, next_x)
+        for index, action in ipairs(navigation_actions) do
+            local action_x = next_x
+                - (#navigation_actions - index) * (nav_size + nav_gap)
+            navigation_bounds[action] = {
+                x1 = action_x,
+                y1 = nav_y,
+                x2 = action_x + nav_size,
+                y2 = nav_y + nav_size,
+            }
+        end
 
         local mouse = mp.get_property_native('mouse-pos')
         if point_is_in_bounds(mouse, navigation_bounds.previous) then
@@ -287,7 +294,7 @@ render_overlay = function()
         end
 
         if navigation_visibility > 0 then
-            for _, action in ipairs({ 'previous', 'next' }) do
+            for _, action in ipairs(navigation_actions) do
                 local bounds = navigation_bounds[action]
                 local hovered = navigation_hovered == action
                 local width = bounds.x2 - bounds.x1
@@ -597,7 +604,10 @@ local function schedule_navigation_hide()
 end
 
 local function show_navigation(hovered)
-    if not file_active then return end
+    if not file_active
+        or not (navigation_available.previous or navigation_available.next) then
+        return
+    end
     stop_navigation_hide_timer()
     animate_navigation_to(hovered and 1 or NAV_IDLE_OPACITY)
     if not hovered then schedule_navigation_hide() end
@@ -605,6 +615,8 @@ end
 
 local function reset_navigation()
     file_active = false
+    navigation_available.previous = false
+    navigation_available.next = false
     navigation_hovered = nil
     navigation_bounds = {}
     navigation_visibility = 0
@@ -614,6 +626,31 @@ local function reset_navigation()
         set_click_action(nil)
     end
     render_overlay()
+end
+
+local function set_navigation(payload)
+    navigation_available.previous = false
+    navigation_available.next = false
+    if type(payload) == 'string' and payload ~= '' then
+        local ok, decoded = pcall(utils.parse_json, payload)
+        if ok and type(decoded) == 'table' then
+            navigation_available.previous = decoded.previous == true
+            navigation_available.next = decoded.next == true
+        end
+    end
+
+    navigation_hovered = nil
+    navigation_bounds = {}
+    stop_navigation_hide_timer()
+    stop_navigation_animation()
+    navigation_visibility = 0
+    if click_action == 'next' or click_action == 'previous' then
+        set_click_action(nil)
+    end
+    render_overlay()
+    if navigation_available.previous or navigation_available.next then
+        show_navigation(false)
+    end
 end
 
 local function update_hover(_, mouse)
@@ -665,6 +702,7 @@ mp.register_event('shutdown', function()
     reset_segments()
 end)
 mp.register_script_message('jellyfin-dc-segments', set_segments)
+mp.register_script_message('jellyfin-dc-navigation', set_navigation)
 mp.register_script_message('jellyfin-dc-skip', function()
     skip_current_segment()
 end)
@@ -680,9 +718,13 @@ mp.observe_property('osd-dimensions', 'native', function()
 end)
 
 mp.add_forced_key_binding('>', 'next', function()
-    send_control('next', 'Next item')
+    if navigation_available.next then
+        send_control('next', 'Next item')
+    end
 end)
 
 mp.add_forced_key_binding('<', 'previous', function()
-    send_control('previous', 'Previous item')
+    if navigation_available.previous then
+        send_control('previous', 'Previous item')
+    end
 end)

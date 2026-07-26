@@ -91,6 +91,11 @@ export interface MpvSegment {
   endSeconds: number;
 }
 
+export interface MpvNavigationState {
+  previous: boolean;
+  next: boolean;
+}
+
 export interface MpvStatus {
   backend: PlaybackMode;
   provider: MpvProvider;
@@ -139,6 +144,7 @@ export interface DesktopBridge {
   setAudioTrack(track: number): Promise<boolean>;
   setSubtitleTrack(track: number): Promise<boolean>;
   setSegments(segments: unknown): Promise<boolean>;
+  setNavigation(navigation: unknown): Promise<boolean>;
   setFullscreen(fullscreen: boolean): Promise<boolean>;
   shutdownReady(requestId: string): Promise<boolean>;
   focusApp(): Promise<boolean>;

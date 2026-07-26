@@ -16,6 +16,12 @@ async function main() {
     await controller.execute("volume", 50);
     await controller.execute("muted", true);
     await controller.execute("muted", false);
+    await controller.command([
+      "script-message",
+      "jellyfin-dc-navigation",
+      JSON.stringify({ previous: true, next: true }),
+    ]);
+    controller.pendingNavigation = { previous: true, next: true };
     await controller.command(["keypress", ">"]);
     await controller.command(["keypress", "<"]);
     await new Promise((resolve) => setTimeout(resolve, 50));

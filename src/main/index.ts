@@ -2098,6 +2098,13 @@ function registerIpc(): void {
     },
   );
   ipcMain.handle(
+    "jdc:mpv:setNavigation",
+    async (event: IpcMainInvokeEvent, navigation: unknown) => {
+      assertTrustedSender(event);
+      return createMpvController().setNavigation(navigation);
+    },
+  );
+  ipcMain.handle(
     "jdc:open-external",
     async (event: IpcMainInvokeEvent, rawUrl: unknown) => {
       assertTrustedSender(event);

@@ -60,6 +60,7 @@ test("exercises the native player against the Jellyfin Web 10.11 contract", asyn
     setRate: async (value) => nativeCalls.push(["rate", value]),
     setAudioTrack: async (value) => nativeCalls.push(["audio", value]),
     setSubtitleTrack: async (value) => nativeCalls.push(["subtitle", value]),
+    setNavigation: async (value) => nativeCalls.push(["navigation", value]),
     setFullscreen: async (value) => nativeCalls.push(["fullscreen", value]),
     focusApp: async () => nativeCalls.push(["focus"]),
     openExternal: async () => true,
@@ -161,7 +162,18 @@ test("exercises the native player against the Jellyfin Web 10.11 contract", asyn
   assert.ok(fixture.events.includes("volumechange"));
   assert.ok(fixture.events.includes("fullscreenchange"));
   assert.ok(fixture.events.includes("stopped"));
-  assert.deepEqual(fixture.playback.slice(0, 2), [["next"], ["previous"]]);
+  assert.deepEqual(
+    fixture.playback.filter(([name]) => ["next", "previous"].includes(name)),
+    [],
+  );
+  assert.ok(
+    nativeCalls.some(
+      ([name, value]) =>
+        name === "navigation" &&
+        value.previous === false &&
+        value.next === false,
+    ),
+  );
   assert.ok(nativeCalls.some(([name]) => name === "pause"));
   assert.ok(nativeCalls.some(([name]) => name === "play"));
   assert.ok(

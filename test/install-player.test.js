@@ -229,3 +229,245 @@ test("passes authenticated Jellyfin MediaSegments to native playback", async (t)
   ]);
   listeners.get("ended")?.({});
 });
+
+test("only enables MPV queue controls for explicit adjacent playlist items", async (t) => {
+  const listeners = new Map();
+  const navigationCalls = [];
+  const playbackCalls = [];
+  let playlist = [];
+  const bridge = {
+    status: async () => ({ backend: "mpv", startFullscreen: false }),
+    on: (name, callback) => listeners.set(name, callback),
+    load: async () => true,
+    setNavigation: async (navigation) => navigationCalls.push(navigation),
+    openExternal: async () => true,
+  };
+  global.location = new URL("https://media.example/jellyfin/web/");
+  global.window = { jellyfinDesktop: bridge };
+  global.document = { getElementById: () => null };
+  t.after(() => {
+    delete global.document;
+    delete global.location;
+    delete global.window;
+  });
+
+  installPlayer({
+    serverUrl: "https://media.example/jellyfin",
+    backend: "mpv",
+    appName: "Deskfin",
+    appVersion: "test",
+    deviceName: "test",
+  });
+  const Player = await global.window.jellyfinDcMpvPlayer();
+  const playbackManager = {
+    syncPlayEnabled: false,
+    async getPlaylist() {
+      return playlist;
+    },
+    async nextTrack() {
+      playbackCalls.push("next");
+    },
+    async previousTrack() {
+      playbackCalls.push("previous");
+    },
+  };
+  const player = new Player({
+    events: { trigger() {} },
+    appSettings: { get: () => 1, set() {} },
+    playbackManager,
+  });
+  const mediaSource = { MediaStreams: [] };
+  const movie = {
+    Id: "movie-id",
+    MediaType: "Video",
+    RunTimeTicks: 60_000_000,
+    Type: "Movie",
+  };
+
+  playlist = [movie];
+  await player.play({
+    url: "https://media.example/jellyfin/Videos/movie-id/stream",
+    item: movie,
+    mediaSource,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(navigationCalls.at(-1), {
+    previous: false,
+    next: false,
+  });
+  listeners.get("next")({});
+  listeners.get("previous")({});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(playbackCalls, []);
+
+  const previousEpisode = {
+    Id: "episode-1",
+    PlaylistItemId: "queue-1",
+  };
+  const currentEpisode = {
+    Id: "episode-2",
+    PlaylistItemId: "queue-2",
+    MediaType: "Video",
+    RunTimeTicks: 60_000_000,
+    Type: "Episode",
+  };
+  const nextEpisode = {
+    Id: "episode-3",
+    PlaylistItemId: "queue-3",
+  };
+  playlist = [previousEpisode, currentEpisode, nextEpisode];
+  await player.play({
+    url: "https://media.example/jellyfin/Videos/episode-2/stream",
+    item: currentEpisode,
+    mediaSource,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(navigationCalls.at(-1), {
+    previous: true,
+    next: true,
+  });
+  listeners.get("next")({});
+  listeners.get("previous")({});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(playbackCalls, ["next", "previous"]);
+});
+
+test("fails closed when a repeated item id makes queue position ambiguous", async (t) => {
+  const listeners = new Map();
+  const navigationCalls = [];
+  const bridge = {
+    status: async () => ({ backend: "mpv", startFullscreen: false }),
+    on: (name, callback) => listeners.set(name, callback),
+    load: async () => true,
+    setNavigation: async (navigation) => navigationCalls.push(navigation),
+    openExternal: async () => true,
+  };
+  global.location = new URL("https://media.example/jellyfin/web/");
+  global.window = { jellyfinDesktop: bridge };
+  global.document = { getElementById: () => null };
+  t.after(() => {
+    delete global.document;
+    delete global.location;
+    delete global.window;
+  });
+
+  installPlayer({
+    serverUrl: "https://media.example/jellyfin",
+    backend: "mpv",
+    appName: "Deskfin",
+    appVersion: "test",
+    deviceName: "test",
+  });
+  const Player = await global.window.jellyfinDcMpvPlayer();
+  const item = {
+    Id: "repeated-id",
+    MediaType: "Video",
+    RunTimeTicks: 60_000_000,
+    Type: "Episode",
+  };
+  const player = new Player({
+    events: { trigger() {} },
+    appSettings: { get: () => 1, set() {} },
+    playbackManager: {
+      syncPlayEnabled: false,
+      async getPlaylist() {
+        return [item, item];
+      },
+    },
+  });
+
+  await player.play({
+    url: "https://media.example/jellyfin/Videos/repeated-id/stream",
+    item,
+    mediaSource: { MediaStreams: [] },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(navigationCalls, [{ previous: false, next: false }]);
+});
+
+test("refreshes navigation after Jellyfin establishes the initial series queue", async (t) => {
+  const listeners = new Map();
+  const queueListeners = new Map();
+  const navigationCalls = [];
+  let playlist = [];
+  let currentIndex = -1;
+  const bridge = {
+    status: async () => ({ backend: "mpv", startFullscreen: false }),
+    on: (name, callback) => listeners.set(name, callback),
+    load: async () => true,
+    setNavigation: async (navigation) => navigationCalls.push(navigation),
+    openExternal: async () => true,
+  };
+  global.location = new URL("https://media.example/jellyfin/web/");
+  global.window = { jellyfinDesktop: bridge };
+  global.document = { getElementById: () => null };
+  t.after(() => {
+    delete global.document;
+    delete global.location;
+    delete global.window;
+  });
+
+  installPlayer({
+    serverUrl: "https://media.example/jellyfin",
+    backend: "mpv",
+    appName: "Deskfin",
+    appVersion: "test",
+    deviceName: "test",
+  });
+  const Player = await global.window.jellyfinDcMpvPlayer();
+  const events = {
+    trigger() {},
+    on(_target, name, callback) {
+      queueListeners.set(name, callback);
+    },
+  };
+  const playbackManager = {
+    syncPlayEnabled: false,
+    async getPlaylist() {
+      return playlist;
+    },
+    getCurrentPlaylistIndex() {
+      return currentIndex;
+    },
+  };
+  const player = new Player({
+    events,
+    appSettings: { get: () => 1, set() {} },
+    playbackManager,
+  });
+  const firstEpisode = {
+    Id: "episode-1",
+    PlaylistItemId: "queue-1",
+    MediaType: "Video",
+    RunTimeTicks: 60_000_000,
+    Type: "Episode",
+  };
+  const secondEpisode = {
+    Id: "episode-2",
+    PlaylistItemId: "queue-2",
+  };
+
+  await player.play({
+    url: "https://media.example/jellyfin/Videos/episode-1/stream",
+    item: firstEpisode,
+    mediaSource: { MediaStreams: [] },
+  });
+
+  // Jellyfin Web sets its local playlist immediately after player.play()
+  // resolves, so the native adapter must read it on the following task.
+  playlist = [firstEpisode, secondEpisode];
+  currentIndex = 0;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(navigationCalls.at(-1), {
+    previous: false,
+    next: true,
+  });
+
+  currentIndex = 1;
+  queueListeners.get("playlistitemmove")();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(navigationCalls.at(-1), {
+    previous: true,
+    next: false,
+  });
+});
