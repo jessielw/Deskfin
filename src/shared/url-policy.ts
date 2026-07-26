@@ -55,3 +55,68 @@ export function validateMediaUrl(rawUrl: unknown, serverUrl: string): string {
   }
   return candidate.href;
 }
+
+const SENSITIVE_PAGE_PARAMETER_NAMES = new Set([
+  "accesstoken",
+  "apikey",
+  "authorization",
+  "password",
+  "token",
+  "xembytoken",
+  "xmediabrowsertoken",
+]);
+
+function normalizedParameterName(value: string): string {
+  return value.toLowerCase().replace(/[-_]/g, "");
+}
+
+function removeSensitiveParameters(parameters: URLSearchParams): void {
+  for (const name of [...parameters.keys()]) {
+    if (SENSITIVE_PAGE_PARAMETER_NAMES.has(normalizedParameterName(name))) {
+      parameters.delete(name);
+    }
+  }
+}
+
+function sanitizePageHash(hash: string): string {
+  if (!hash) return "";
+  const value = hash.slice(1);
+  const queryIndex = value.indexOf("?");
+  if (queryIndex >= 0) {
+    const route = value.slice(0, queryIndex);
+    const parameters = new URLSearchParams(value.slice(queryIndex + 1));
+    removeSensitiveParameters(parameters);
+    const query = parameters.toString();
+    return `#${route}${query ? `?${query}` : ""}`;
+  }
+
+  if (/^[^/?#=&]+=/.test(value)) {
+    const parameters = new URLSearchParams(value);
+    removeSensitiveParameters(parameters);
+    const query = parameters.toString();
+    return query ? `#${query}` : "";
+  }
+  return hash;
+}
+
+export function safeJellyfinPageUrl(
+  rawUrl: unknown,
+  serverUrl: string,
+): string {
+  if (typeof rawUrl !== "string" || !rawUrl) {
+    throw new Error("A Jellyfin page URL is required");
+  }
+  if (!isWithinServer(rawUrl, serverUrl)) {
+    throw new Error("The page URL is outside the configured Jellyfin server");
+  }
+
+  const candidate = new URL(rawUrl);
+  if (!["http:", "https:"].includes(candidate.protocol)) {
+    throw new Error("The page URL must use HTTP or HTTPS");
+  }
+  candidate.username = "";
+  candidate.password = "";
+  removeSensitiveParameters(candidate.searchParams);
+  candidate.hash = sanitizePageHash(candidate.hash);
+  return candidate.href;
+}

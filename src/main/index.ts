@@ -86,7 +86,11 @@ import {
   updateServerDisplayName,
   upsertServer,
 } from "../shared/settings";
-import { isWithinServer, normalizeServerUrl } from "../shared/url-policy";
+import {
+  isWithinServer,
+  normalizeServerUrl,
+  safeJellyfinPageUrl,
+} from "../shared/url-policy";
 import type {
   AppSettings,
   MpvDiagnostic,
@@ -2260,6 +2264,54 @@ async function showAboutDialog(): Promise<void> {
   else await dialog.showMessageBox(options);
 }
 
+async function showKeyboardShortcutsDialog(): Promise<void> {
+  const primary = process.platform === "darwin" ? "Command" : "Ctrl";
+  const options = {
+    type: "info" as const,
+    title: `${APP_NAME} keyboard shortcuts`,
+    message: "Keyboard shortcuts",
+    detail: [
+      `Settings — ${primary}+,`,
+      `Switch or add server — ${primary}+Shift+S`,
+      `Use Jellyfin Web player — ${primary}+Shift+W`,
+      `Use MPV player — ${primary}+Shift+M`,
+      `Zoom in / out — ${primary}+Plus / ${primary}+Minus`,
+      `Actual size — ${primary}+0`,
+      "",
+      "While playing in MPV",
+      "Skip the active segment — Enter",
+      "Skip fallback — Ctrl+Shift+I",
+      "Next / previous item — > / <",
+      "",
+      "Jellyfin Web handles its own playback shortcuts.",
+    ].join("\n"),
+  };
+  const owner = diagnosticOwner();
+  if (owner) await dialog.showMessageBox(owner, options);
+  else await dialog.showMessageBox(options);
+}
+
+function currentJellyfinPageUrl(): string | null {
+  if (!serverUrl || !mainWindow || mainWindow.isDestroyed()) return null;
+  try {
+    return safeJellyfinPageUrl(mainWindow.webContents.getURL(), serverUrl);
+  } catch {
+    return null;
+  }
+}
+
+async function openCurrentJellyfinPage(): Promise<void> {
+  const url = currentJellyfinPageUrl();
+  if (!url) throw new Error("No Jellyfin page is currently available");
+  await shell.openExternal(url);
+}
+
+async function copyCurrentJellyfinPage(): Promise<void> {
+  const url = currentJellyfinPageUrl();
+  if (!url) throw new Error("No Jellyfin page is currently available");
+  clipboard.writeText(url);
+}
+
 async function openLogFolder(): Promise<void> {
   if (!logDirectory) return;
   const result = await shell.openPath(logDirectory);
@@ -2392,6 +2444,7 @@ function switchMode(
 
 function installMenu(): void {
   const template: MenuItemConstructorOptions[] = [];
+  const hasCurrentPage = Boolean(currentJellyfinPageUrl());
   const serverItems: MenuItemConstructorOptions[] =
     persistedSettings.servers.length > 0
       ? persistedSettings.servers.map((server) => ({
@@ -2481,7 +2534,24 @@ function installMenu(): void {
         { role: "forceReload" },
         { role: "toggleDevTools" },
         { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
         { role: "togglefullscreen" },
+        { type: "separator" },
+        {
+          label: "Open current page in browser",
+          enabled: hasCurrentPage,
+          click: () =>
+            runMenuAction("Open current page", openCurrentJellyfinPage),
+        },
+        {
+          label: "Copy current page link",
+          enabled: hasCurrentPage,
+          click: () =>
+            runMenuAction("Copy current page link", copyCurrentJellyfinPage),
+        },
       ],
     },
     {
@@ -2504,6 +2574,16 @@ function installMenu(): void {
           enabled: Boolean(serverUrl),
           click: () =>
             runMenuAction("Codec report", () => collectCodecReport(true)),
+        },
+      ],
+    },
+    {
+      label: "Help",
+      submenu: [
+        {
+          label: "Keyboard shortcuts...",
+          click: () =>
+            runMenuAction("Keyboard shortcuts", showKeyboardShortcutsDialog),
         },
       ],
     },

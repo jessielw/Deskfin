@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - MPV.net support
 - Skip intro/outro through mpv/mpv.net
+- View menu now includes standard zoom controls
+- Added 'Open current page in browser' and 'Copy current page link'
+- Links retain the Jellyfin route while removing credentials and auth tokens
+- Added Help → Keyboard shortcuts
 
 ### Changed
 
