@@ -176,6 +176,86 @@ function installPlayer(config) {
     };
   }
 
+  function normalizeMediaSegments(payload) {
+    const items = Array.isArray(payload?.Items) ? payload.Items : [];
+    return items
+      .map((segment) => {
+        const type = String(segment?.Type || "");
+        const startTicks = Number(
+          segment?.StartTicks ?? segment?.StartPositionTicks,
+        );
+        const endTicks = Number(segment?.EndTicks ?? segment?.EndPositionTicks);
+        if (
+          !["Intro", "Outro"].includes(type) ||
+          !Number.isFinite(startTicks) ||
+          !Number.isFinite(endTicks) ||
+          startTicks < 0 ||
+          endTicks <= startTicks
+        ) {
+          return null;
+        }
+        return {
+          type,
+          startSeconds: startTicks / 10000000,
+          endSeconds: endTicks / 10000000,
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.startSeconds - right.startSeconds)
+      .slice(0, 100);
+  }
+
+  async function fetchMediaSegments(item) {
+    const itemId = String(item?.Id || "");
+    if (!itemId) return [];
+
+    const connectionManager =
+      window.ConnectionManager || window.connectionManager;
+    let apiClient = null;
+    if (connectionManager?.getApiClient) {
+      try {
+        apiClient = connectionManager.getApiClient(item?.ServerId || item);
+      } catch {
+        try {
+          apiClient = connectionManager.getApiClient();
+        } catch {
+          apiClient = null;
+        }
+      }
+    }
+    apiClient = apiClient || window.ApiClient || null;
+    if (!apiClient) return [];
+
+    const path = `MediaSegments/${encodeURIComponent(itemId)}`;
+    const rawUrl =
+      typeof apiClient.getUrl === "function"
+        ? apiClient.getUrl(path)
+        : new URL(`${basePath}/${path}`, server).href;
+    const url = new URL(rawUrl, location.href);
+    ["Intro", "Outro"].forEach((type) =>
+      url.searchParams.append("includeSegmentTypes", type),
+    );
+
+    try {
+      if (typeof apiClient.getJSON === "function") {
+        return normalizeMediaSegments(await apiClient.getJSON(url.href));
+      }
+
+      const headers = {};
+      const token =
+        typeof apiClient.accessToken === "function"
+          ? apiClient.accessToken()
+          : "";
+      if (token) headers["X-Emby-Token"] = token;
+      const response = await fetch(url.href, { headers });
+      if (!response.ok) return [];
+      return normalizeMediaSegments(await response.json());
+    } catch (error) {
+      console.debug("[Deskfin] MediaSegments unavailable:", error);
+      return [];
+    }
+  }
+
   function playbackTitle(options) {
     const item = options.item || {};
     const fallback = options.title || item.Name || "";
@@ -341,6 +421,7 @@ function installPlayer(config) {
       this._failurePending = false;
       this._loadRequest = null;
       this._shutdownRequestId = null;
+      this._playGeneration = 0;
       this._wireBridge();
     }
 
@@ -425,6 +506,8 @@ function installPlayer(config) {
       this.subtitleStreamIndex =
         options.mediaSource?.DefaultSubtitleStreamIndex ?? -1;
       this._failurePending = false;
+      const playGeneration = ++this._playGeneration;
+      const segmentsPromise = fetchMediaSegments(options.item);
       try {
         const status = await invoke("status");
         this._fullscreen = status.startFullscreen ?? state.startFullscreen;
@@ -436,6 +519,25 @@ function installPlayer(config) {
           ...selectedTracks(options),
         };
         await invoke("load", this._loadRequest);
+        segmentsPromise
+          .then((segments) => {
+            if (
+              this._options !== options ||
+              this._playGeneration !== playGeneration ||
+              !this._currentSrc ||
+              this._failurePending
+            ) {
+              return;
+            }
+            if (typeof bridge.setSegments !== "function") return;
+            return invoke("setSegments", segments);
+          })
+          .catch((error) => {
+            console.debug(
+              "[Deskfin] Could not pass MediaSegments to MPV:",
+              error,
+            );
+          });
       } catch (error) {
         this._queueFailure("unavailable", String(error));
       }
@@ -449,6 +551,7 @@ function installPlayer(config) {
       this._options = null;
       this._loadRequest = null;
       this._failurePending = false;
+      this._playGeneration += 1;
       if (activeMpvPlayer === this) activeMpvPlayer = null;
       this.events.trigger(this, "stopped", [{ src }]);
     }

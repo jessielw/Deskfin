@@ -82,6 +82,15 @@ export interface MpvLoadRequest {
   externalSubtitleUrl: string | null;
 }
 
+export type MpvSegmentType =
+  "Intro" | "Outro" | "Recap" | "Preview" | "Commercial";
+
+export interface MpvSegment {
+  type: MpvSegmentType;
+  startSeconds: number;
+  endSeconds: number;
+}
+
 export interface MpvStatus {
   backend: PlaybackMode;
   provider: MpvProvider;
@@ -129,6 +138,7 @@ export interface DesktopBridge {
   setRate(rate: number): Promise<boolean>;
   setAudioTrack(track: number): Promise<boolean>;
   setSubtitleTrack(track: number): Promise<boolean>;
+  setSegments(segments: unknown): Promise<boolean>;
   setFullscreen(fullscreen: boolean): Promise<boolean>;
   shutdownReady(requestId: string): Promise<boolean>;
   focusApp(): Promise<boolean>;

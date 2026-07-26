@@ -155,3 +155,77 @@ test("acknowledges shutdown immediately when MPV has no active item", async (t) 
 
   assert.equal(acknowledgedRequest, "shutdown-idle");
 });
+
+test("passes authenticated Jellyfin MediaSegments to native playback", async (t) => {
+  const listeners = new Map();
+  const nativeCalls = [];
+  const bridge = {
+    status: async () => ({ backend: "mpv", startFullscreen: false }),
+    on: (name, callback) => listeners.set(name, callback),
+    load: async () => true,
+    setSegments: async (segments) => nativeCalls.push(segments),
+    openExternal: async () => true,
+  };
+  global.location = new URL("https://media.example/jellyfin/web/");
+  global.window = {
+    jellyfinDesktop: bridge,
+    ApiClient: {
+      getUrl(path) {
+        return `https://media.example/jellyfin/${path}`;
+      },
+      async getJSON(url) {
+        assert.match(url, /MediaSegments\/movie-id/);
+        assert.match(url, /includeSegmentTypes=Intro/);
+        assert.match(url, /includeSegmentTypes=Outro/);
+        return {
+          Items: [
+            { Type: "Intro", StartTicks: 10000000, EndTicks: 30000000 },
+            { Type: "Outro", StartTicks: 90000000, EndTicks: 120000000 },
+            { Type: "Commercial", StartTicks: 40000000, EndTicks: 50000000 },
+          ],
+        };
+      },
+    },
+  };
+  global.document = { getElementById: () => null };
+  t.after(() => {
+    delete global.document;
+    delete global.location;
+    delete global.window;
+  });
+
+  installPlayer({
+    serverUrl: "https://media.example/jellyfin",
+    backend: "mpv",
+    appName: "Deskfin",
+    appVersion: "test",
+    deviceName: "test",
+  });
+  const Player = await global.window.jellyfinDcMpvPlayer();
+  const player = new Player({
+    events: { trigger() {} },
+    appSettings: { get: () => 1, set() {} },
+    playbackManager: { syncPlayEnabled: false },
+  });
+
+  const options = {
+    url: "https://media.example/jellyfin/Videos/movie-id/stream",
+    item: {
+      Id: "movie-id",
+      MediaType: "Video",
+      RunTimeTicks: 120000000,
+      Type: "Movie",
+    },
+    mediaSource: { MediaStreams: [] },
+  };
+  await player.play(options);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(nativeCalls, [
+    [
+      { type: "Intro", startSeconds: 1, endSeconds: 3 },
+      { type: "Outro", startSeconds: 9, endSeconds: 12 },
+    ],
+  ]);
+  listeners.get("ended")?.({});
+});

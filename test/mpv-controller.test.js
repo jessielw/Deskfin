@@ -138,6 +138,10 @@ test("adds the Jellyfin OSC preset without discarding other MPV script options",
     ),
   );
   assert.ok(args.includes("--script-opts-append=osc-timetotal=yes"));
+  assert.ok(
+    !args.some((argument) => argument.includes("osc-custom_button")),
+    "skip controls should only be rendered for an active media segment",
+  );
   assert.equal(
     args.filter((argument) => argument.startsWith("--script-opts-append="))
       .length,
@@ -326,5 +330,35 @@ test("uses OSD-aware commands for remote playback changes", async () => {
     ["osd-auto", "set", "speed", "1.25"],
     ["osd-auto", "set", "mute", "yes"],
     ["osd-auto", "set", "sid", "no"],
+  ]);
+});
+
+test("passes valid MediaSegments to the integration script", async () => {
+  const commands = [];
+  const controller = new MpvController({ serverUrl: "https://media.example" });
+  controller.ensureStarted = async () => {};
+  controller.current = true;
+  controller.fileLoaded = true;
+  controller.child = { exitCode: null };
+  controller.socket = { destroyed: false };
+  controller.command = async (command) => {
+    commands.push(command);
+  };
+
+  await controller.setSegments([
+    { type: "Intro", startSeconds: 12, endSeconds: 45 },
+    { type: "Outro", startSeconds: 500, endSeconds: 540 },
+    { type: "Unknown", startSeconds: 1, endSeconds: 2 },
+  ]);
+
+  assert.deepEqual(commands, [
+    [
+      "script-message",
+      "jellyfin-dc-segments",
+      JSON.stringify([
+        { type: "Intro", startSeconds: 12, endSeconds: 45 },
+        { type: "Outro", startSeconds: 500, endSeconds: 540 },
+      ]),
+    ],
   ]);
 });

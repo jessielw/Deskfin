@@ -2027,6 +2027,13 @@ function registerIpc(): void {
     );
   }
   ipcMain.handle(
+    "jdc:mpv:setSegments",
+    async (event: IpcMainInvokeEvent, segments: unknown) => {
+      assertTrustedSender(event);
+      return createMpvController().setSegments(segments);
+    },
+  );
+  ipcMain.handle(
     "jdc:open-external",
     async (event: IpcMainInvokeEvent, rawUrl: unknown) => {
       assertTrustedSender(event);

@@ -53,6 +53,13 @@ drop-in alternative to MPV. Deskfin looks for regular MPV first, then mpv.net,
 or you can select either executable in Settings. mpv.net keeps its own native
 player window; Deskfin does not modify its configuration files.
 
+When Jellyfin reports an Intro or Outro segment, the MPV window shows a native
+skip prompt only while that segment is playing. Click the prompt or press
+`Enter` to jump to the end of the segment (`Ctrl+Shift+I` is also available as
+a fallback). This uses Jellyfin’s authenticated MediaSegments API, so it also
+works with segment providers such as Intro Skipper without storing another
+token in Deskfin.
+
 ## Why use a separate MPV window?
 
 The point is to get the strengths of MPV without embedding and maintaining a

@@ -11,6 +11,8 @@ import type {
   MpvLoadRequest,
   MpvPresentation,
   MpvProvider,
+  MpvSegment,
+  MpvSegmentType,
   MpvStatus,
 } from "../../shared/types";
 import { detectMpvProvider, isMpvProvider } from "./mpv-provider";
@@ -115,6 +117,49 @@ function trackNumber(value: unknown, field: string): number {
     throw new Error(`${field} must be an integer between 0 and 999`);
   }
   return value;
+}
+
+const MPV_SEGMENT_TYPES: readonly MpvSegmentType[] = [
+  "Intro",
+  "Outro",
+  "Recap",
+  "Preview",
+  "Commercial",
+];
+
+function normalizeSegments(value: unknown): MpvSegment[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error("segments must be an array");
+
+  return value
+    .slice(0, 100)
+    .flatMap((candidate): MpvSegment[] => {
+      if (!isRecord(candidate)) return [];
+      const type = candidate.type;
+      const startSeconds = candidate.startSeconds;
+      const endSeconds = candidate.endSeconds;
+      if (
+        typeof type !== "string" ||
+        !MPV_SEGMENT_TYPES.includes(type as MpvSegmentType) ||
+        typeof startSeconds !== "number" ||
+        !Number.isFinite(startSeconds) ||
+        typeof endSeconds !== "number" ||
+        !Number.isFinite(endSeconds) ||
+        startSeconds < 0 ||
+        endSeconds <= startSeconds ||
+        endSeconds > 315360000
+      ) {
+        return [];
+      }
+      return [
+        {
+          type: type as MpvSegmentType,
+          startSeconds,
+          endSeconds,
+        },
+      ];
+    })
+    .sort((left, right) => left.startSeconds - right.startSeconds);
 }
 
 export function normalizeMpvPresentation(
@@ -234,6 +279,8 @@ export class MpvController {
   current = false;
   replacing = false;
   pendingLoad: MpvLoadRequest | null = null;
+  pendingSegments: MpvSegment[] = [];
+  fileLoaded = false;
   lastProcessError: Error | null = null;
   ipcPath: string | null = null;
   legacyLoadfileArguments = false;
@@ -470,6 +517,8 @@ export class MpvController {
       const wasCurrent = this.current;
       this.current = false;
       this.replacing = false;
+      this.fileLoaded = false;
+      this.pendingSegments = [];
       this.pendingLoad = null;
       if (!wasCurrent) return;
       if (message.reason === "error") {
@@ -516,6 +565,8 @@ export class MpvController {
       } else {
         await this.command(["set_property", "sid", request.subtitleTrack]);
       }
+      this.fileLoaded = true;
+      await this.sendSegments();
       this.emit("loaded");
       if (this.presentation === "jellyfin") {
         const message = request.title
@@ -531,6 +582,22 @@ export class MpvController {
     } catch (error: unknown) {
       this.emit("failed", { code: "tracks", message: errorMessage(error) });
     }
+  }
+
+  async setSegments(value: unknown): Promise<true> {
+    const segments = normalizeSegments(value);
+    this.pendingSegments = segments;
+    if (!this.current || !this.ready || !this.fileLoaded) return true;
+    await this.sendSegments();
+    return true;
+  }
+
+  async sendSegments(): Promise<void> {
+    await this.command([
+      "script-message",
+      "jellyfin-dc-segments",
+      JSON.stringify(this.pendingSegments),
+    ]);
   }
 
   command(command: MpvCommand): Promise<unknown> {
@@ -569,6 +636,8 @@ export class MpvController {
     await this.command(["set_property", "pause", false]);
     await this.command(["set_property", "force-media-title", request.title]);
     this.pendingLoad = request;
+    this.pendingSegments = [];
+    this.fileLoaded = false;
     this.current = true;
     this.replacing = true;
     try {
@@ -627,6 +696,8 @@ export class MpvController {
     if (name === "stop" && !this.ready) {
       this.current = false;
       this.replacing = false;
+      this.fileLoaded = false;
+      this.pendingSegments = [];
       this.pendingLoad = null;
       return true;
     }
@@ -678,6 +749,8 @@ export class MpvController {
     if (name === "stop") {
       this.current = false;
       this.replacing = false;
+      this.fileLoaded = false;
+      this.pendingSegments = [];
       this.pendingLoad = null;
     }
     await this.command(makeCommand());
@@ -701,6 +774,8 @@ export class MpvController {
     this.child = null;
     this.current = false;
     this.replacing = false;
+    this.fileLoaded = false;
+    this.pendingSegments = [];
     this.pendingLoad = null;
     if (this.socket) this.socket.destroy();
     this.socket = null;
