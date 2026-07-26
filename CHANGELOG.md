@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- MPV.net support
+- Skip intro/outro through mpv/mpv.net
+
 ### Fixed
 
 - Long executable description on hover/taskbar
