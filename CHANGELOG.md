@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MPV.net support
 - Skip intro/outro through mpv/mpv.net
 
+### Changed
+
+- Children windows now open on the screen based on the parent Deskfin window
+
 ### Fixed
 
 - Long executable description on hover/taskbar

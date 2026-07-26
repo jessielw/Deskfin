@@ -1082,8 +1082,32 @@ function openSettingsExternalUrl(url: string): boolean {
   return true;
 }
 
+function placeAuxiliaryWindow(
+  window: BrowserWindow,
+  owner: BrowserWindow | null,
+  center: boolean,
+): void {
+  if (!owner && !center) return;
+
+  const targetDisplay = owner
+    ? screen.getDisplayMatching(owner.getBounds())
+    : screen.getPrimaryDisplay();
+  const currentDisplay = screen.getDisplayMatching(window.getBounds());
+  if (!center && currentDisplay.id === targetDisplay.id) return;
+
+  const bounds = window.getBounds();
+  const workArea = targetDisplay.workArea;
+  const x =
+    workArea.x + Math.max(0, Math.floor((workArea.width - bounds.width) / 2));
+  const y =
+    workArea.y + Math.max(0, Math.floor((workArea.height - bounds.height) / 2));
+  window.setPosition(x, y);
+}
+
 function showSettingsWindow(): BrowserWindow {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
+    const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    placeAuxiliaryWindow(settingsWindow, owner, false);
     settingsWindow.show();
     settingsWindow.focus();
     return settingsWindow;
@@ -1120,7 +1144,12 @@ function showSettingsWindow(): BrowserWindow {
     openSettingsExternalUrl(url);
     return { action: "deny" };
   });
-  settingsWindow.once("ready-to-show", () => settingsWindow?.show());
+  settingsWindow.once("ready-to-show", () => {
+    if (!settingsWindow || settingsWindow.isDestroyed()) return;
+    placeAuxiliaryWindow(settingsWindow, parent, true);
+    settingsWindow.show();
+    settingsWindow.focus();
+  });
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
@@ -1134,7 +1163,9 @@ function emitServersSnapshot(): void {
 }
 
 function showServersWindow(): BrowserWindow {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   if (serversWindow && !serversWindow.isDestroyed()) {
+    placeAuxiliaryWindow(serversWindow, parent, false);
     serversWindow.show();
     serversWindow.focus();
     emitServersSnapshot();
@@ -1148,6 +1179,7 @@ function showServersWindow(): BrowserWindow {
     height: 680,
     minWidth: 540,
     minHeight: 460,
+    parent: parent || undefined,
     show: false,
     title: `${APP_NAME} Servers`,
     icon: requiredPath(appIconPath, "Application icon"),
@@ -1164,7 +1196,12 @@ function showServersWindow(): BrowserWindow {
     if (url !== expectedUrl) event.preventDefault();
   });
   serversWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  serversWindow.once("ready-to-show", () => serversWindow?.show());
+  serversWindow.once("ready-to-show", () => {
+    if (!serversWindow || serversWindow.isDestroyed()) return;
+    placeAuxiliaryWindow(serversWindow, parent, true);
+    serversWindow.show();
+    serversWindow.focus();
+  });
   serversWindow.on("closed", () => {
     serversWindow = null;
   });
