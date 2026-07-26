@@ -110,6 +110,10 @@ const MAIN_WINDOW_MIN_HEIGHT = 480;
 const WINDOW_STATE_SAVE_DELAY_MS = 250;
 const RESUME_RECOVERY_DELAY_MS = 1_500;
 const UNRESPONSIVE_RECOVERY_DELAY_MS = 2_500;
+const SETTINGS_EXTERNAL_URLS = new Set([
+  "https://mpv.io/installation/",
+  "https://github.com/mpvnet-player/mpv.net/releases",
+]);
 const smokeSwitch = process.argv.includes("--smoke-switch");
 const smokeSettings = process.argv.includes("--smoke-settings");
 const smokeServers = process.argv.includes("--smoke-servers");
@@ -218,6 +222,7 @@ interface MainRecoveryState {
 interface SettingsSmokeReport {
   title: string;
   hasForm: boolean;
+  hasMpvInstallLinks: boolean;
   hasMpvPath: boolean;
   hasMpvTest: boolean;
   hasMpvDiagnostic: boolean;
@@ -1066,6 +1071,17 @@ function installPowerMonitorRecovery(): void {
   });
 }
 
+function openSettingsExternalUrl(url: string): boolean {
+  if (!SETTINGS_EXTERNAL_URLS.has(url)) return false;
+  void shell.openExternal(url).catch((error: unknown) => {
+    console.error(
+      `${LOG_PREFIX} Could not open MPV installation page:`,
+      errorMessage(error),
+    );
+  });
+  return true;
+}
+
 function showSettingsWindow(): BrowserWindow {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.show();
@@ -1096,9 +1112,14 @@ function showSettingsWindow(): BrowserWindow {
   });
   settingsWindow.setMenuBarVisibility(false);
   settingsWindow.webContents.on("will-navigate", (event, url) => {
-    if (url !== expectedUrl) event.preventDefault();
+    if (url === expectedUrl) return;
+    event.preventDefault();
+    openSettingsExternalUrl(url);
   });
-  settingsWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  settingsWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openSettingsExternalUrl(url);
+    return { action: "deny" };
+  });
   settingsWindow.once("ready-to-show", () => settingsWindow?.show());
   settingsWindow.on("closed", () => {
     settingsWindow = null;
@@ -1161,6 +1182,11 @@ function runSettingsSmoke(): void {
         return {
           title: document.title,
           hasForm: Boolean(document.getElementById('settings-form')),
+          hasMpvInstallLinks:
+            document.getElementById('install-mpv')?.href ===
+              'https://mpv.io/installation/' &&
+            document.getElementById('install-mpv-net')?.href ===
+              'https://github.com/mpvnet-player/mpv.net/releases',
           hasMpvPath: Boolean(document.getElementById('mpv-path')),
           hasMpvTest: Boolean(document.getElementById('test-mpv')),
           hasMpvDiagnostic: Boolean(document.getElementById('mpv-diagnostic')),
@@ -1173,6 +1199,7 @@ function runSettingsSmoke(): void {
       })()`)) as SettingsSmokeReport;
       if (
         !report.hasForm ||
+        !report.hasMpvInstallLinks ||
         !report.hasMpvPath ||
         !report.hasMpvTest ||
         !report.hasMpvDiagnostic ||

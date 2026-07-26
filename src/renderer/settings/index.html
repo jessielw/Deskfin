@@ -32,6 +32,33 @@
         <section id="mpv-settings" aria-labelledby="mpv-heading">
           <h2 id="mpv-heading">MPV / mpv.net</h2>
 
+          <aside class="mpv-setup" aria-labelledby="mpv-setup-heading">
+            <span>
+              <strong id="mpv-setup-heading">Set up native playback</strong>
+              <small>
+                MPV gives Deskfin broad codec support and fast direct playback.
+                Install either player, then let Deskfin detect it or select the
+                executable below.
+              </small>
+            </span>
+            <nav aria-label="MPV downloads">
+              <a
+                id="install-mpv"
+                href="https://mpv.io/installation/"
+                target="_blank"
+                rel="noreferrer"
+                >Install MPV</a
+              >
+              <a
+                id="install-mpv-net"
+                href="https://github.com/mpvnet-player/mpv.net/releases"
+                target="_blank"
+                rel="noreferrer"
+                >Get mpv.net <small>Windows</small></a
+              >
+            </nav>
+          </aside>
+
           <label class="field" for="mpv-path">
             <span>Executable</span>
             <span class="path-row">
@@ -47,8 +74,8 @@
               </button>
             </span>
             <small
-              >Leave blank to use MPV from the system PATH. On Windows, mpv.net
-              is used when regular MPV is not found.</small
+              >Leave blank for automatic detection. On Windows, Deskfin checks
+              for regular MPV before mpv.net.</small
             >
           </label>
 
