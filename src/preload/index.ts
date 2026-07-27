@@ -90,8 +90,8 @@ const desktopBridge: DesktopBridge = {
   setMuted: (muted) => ipcRenderer.invoke("jdc:mpv:setMuted", muted),
   setRate: (rate) => ipcRenderer.invoke("jdc:mpv:setRate", rate),
   setAudioTrack: (track) => ipcRenderer.invoke("jdc:mpv:setAudioTrack", track),
-  setSubtitleTrack: (track) =>
-    ipcRenderer.invoke("jdc:mpv:setSubtitleTrack", track),
+  setSubtitleTrack: (streamIndex) =>
+    ipcRenderer.invoke("jdc:mpv:setSubtitleTrack", streamIndex),
   setSegments: (segments) =>
     ipcRenderer.invoke("jdc:mpv:setSegments", segments),
   setNavigation: (navigation) =>

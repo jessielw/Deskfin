@@ -17,7 +17,17 @@ test("normalizes a constrained MPV load request", () => {
       title: "Example",
       fullscreen: false,
       audioTrack: 2,
-      subtitleTrack: 0,
+      subtitleStreamIndex: 4,
+      subtitleTracks: [
+        {
+          jellyfinIndex: 4,
+          mpvTrack: 0,
+          externalUrl:
+            "https://media.example/jellyfin/Videos/1/Subtitles/4/Stream.srt",
+          title: "English (SRT)",
+          language: "eng",
+        },
+      ],
     },
     "https://media.example/jellyfin",
   );
@@ -25,6 +35,8 @@ test("normalizes a constrained MPV load request", () => {
   assert.equal(request.startSeconds, 12.5);
   assert.equal(request.audioTrack, 2);
   assert.equal(request.fullscreen, false);
+  assert.equal(request.subtitleStreamIndex, 4);
+  assert.equal(request.subtitleTracks[0].language, "eng");
 });
 
 test("rejects unsafe MPV input", () => {
@@ -121,7 +133,10 @@ test("forwards Jellyfin controls and native track changes from MPV", () => {
   assert.deepEqual(events, [
     { name: "next", payload: {} },
     { name: "audioTrack", payload: { value: 2 } },
-    { name: "subtitleTrack", payload: { value: false } },
+    {
+      name: "subtitleTrack",
+      payload: { value: false, jellyfinIndex: -1 },
+    },
   ]);
 });
 
@@ -193,9 +208,9 @@ test("falls back to the pre-0.38 loadfile arguments and remembers the capability
     title: "Example",
     fullscreen: false,
     audioTrack: 0,
-    subtitleTrack: 0,
     externalAudioUrl: null,
-    externalSubtitleUrl: null,
+    subtitleStreamIndex: -1,
+    subtitleTracks: [],
   };
 
   await controller.loadRequest(request);
@@ -251,9 +266,9 @@ test("does not remember legacy loadfile arguments when the retry also fails", as
       title: "Example",
       fullscreen: false,
       audioTrack: 0,
-      subtitleTrack: 0,
       externalAudioUrl: null,
-      externalSubtitleUrl: null,
+      subtitleStreamIndex: -1,
+      subtitleTracks: [],
     }),
     /invalid parameter/,
   );
@@ -282,7 +297,8 @@ test("restarts MPV once when a load loses its IPC connection", async () => {
     title: "Example",
     fullscreen: false,
     audioTrack: 0,
-    subtitleTrack: 0,
+    subtitleStreamIndex: -1,
+    subtitleTracks: [],
   };
   let attempts = 0;
   let teardownCalls = 0;
@@ -317,12 +333,14 @@ test("uses OSD-aware commands for remote playback changes", async () => {
   controller.command = async (command) => {
     commands.push(command);
   };
+  controller.current = true;
+  controller.fileLoaded = true;
 
   await controller.execute("seek", 42.5);
   await controller.execute("volume", 73);
   await controller.execute("rate", 1.25);
   await controller.execute("muted", true);
-  await controller.execute("subtitleTrack", 0);
+  await controller.execute("subtitleTrack", -1);
 
   assert.deepEqual(commands, [
     ["osd-auto", "seek", "42.5", "absolute"],
@@ -331,6 +349,89 @@ test("uses OSD-aware commands for remote playback changes", async () => {
     ["osd-auto", "set", "mute", "yes"],
     ["osd-auto", "set", "sid", "no"],
   ]);
+});
+
+test("loads and maps every external Jellyfin subtitle for MPV selection", async () => {
+  const commands = [];
+  const events = [];
+  let trackList = [{ id: 1, type: "sub", external: false }];
+  const controller = new MpvController({
+    serverUrl: "https://media.example/jellyfin",
+    presentation: "user",
+    eventSink: (name, payload) => events.push({ name, payload }),
+  });
+  controller.child = { exitCode: null };
+  controller.socket = { destroyed: false };
+  controller.current = true;
+  controller.pendingLoad = {
+    url: "https://media.example/jellyfin/Videos/1/stream",
+    startSeconds: 0,
+    title: "Example",
+    fullscreen: false,
+    audioTrack: 1,
+    externalAudioUrl: null,
+    subtitleStreamIndex: 4,
+    subtitleTracks: [
+      {
+        jellyfinIndex: 2,
+        mpvTrack: 1,
+        externalUrl: null,
+        title: "English (ASS)",
+        language: "eng",
+      },
+      {
+        jellyfinIndex: 4,
+        mpvTrack: 0,
+        externalUrl:
+          "https://media.example/jellyfin/Videos/1/Subtitles/4/Stream.srt",
+        title: "Spanish (SRT)",
+        language: "spa",
+      },
+    ],
+  };
+  controller.command = async (command) => {
+    commands.push(command);
+    if (command[0] === "get_property" && command[1] === "track-list") {
+      return trackList;
+    }
+    if (command[0] === "sub-add") {
+      trackList = [...trackList, { id: 2, type: "sub", external: true }];
+    }
+    return undefined;
+  };
+
+  await controller.applySelectedTracks();
+  assert.ok(
+    commands.some(
+      (command) =>
+        command[0] === "sub-add" &&
+        command[1].endsWith("/Subtitles/4/Stream.srt") &&
+        command[2] === "auto" &&
+        command[3] === "Spanish (SRT)" &&
+        command[4] === "spa",
+    ),
+  );
+  assert.ok(
+    commands.some(
+      (command) =>
+        command[0] === "set_property" &&
+        command[1] === "sid" &&
+        command[2] === 2,
+    ),
+  );
+
+  controller.onMessage({
+    event: "property-change",
+    name: "sid",
+    data: 2,
+  });
+  assert.deepEqual(events.at(-1), {
+    name: "subtitleTrack",
+    payload: { value: 2, jellyfinIndex: 4 },
+  });
+
+  await controller.execute("subtitleTrack", 2);
+  assert.deepEqual(commands.at(-1), ["osd-auto", "set", "sid", "1"]);
 });
 
 test("passes valid MediaSegments to the integration script", async () => {

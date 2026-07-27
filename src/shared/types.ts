@@ -77,9 +77,17 @@ export interface MpvLoadRequest {
   title: string;
   fullscreen: boolean;
   audioTrack: number;
-  subtitleTrack: number;
   externalAudioUrl: string | null;
-  externalSubtitleUrl: string | null;
+  subtitleStreamIndex: number;
+  subtitleTracks: MpvSubtitleTrack[];
+}
+
+export interface MpvSubtitleTrack {
+  jellyfinIndex: number;
+  mpvTrack: number;
+  externalUrl: string | null;
+  title: string;
+  language: string;
 }
 
 export type MpvSegmentType =
@@ -142,7 +150,7 @@ export interface DesktopBridge {
   setMuted(muted: boolean): Promise<boolean>;
   setRate(rate: number): Promise<boolean>;
   setAudioTrack(track: number): Promise<boolean>;
-  setSubtitleTrack(track: number): Promise<boolean>;
+  setSubtitleTrack(streamIndex: number): Promise<boolean>;
   setSegments(segments: unknown): Promise<boolean>;
   setNavigation(navigation: unknown): Promise<boolean>;
   setFullscreen(fullscreen: boolean): Promise<boolean>;

@@ -146,9 +146,9 @@ function installPlayer(config) {
     if (options.playMethod === "Transcode") {
       return {
         audioTrack: 1,
-        subtitleTrack: 0,
         externalAudioUrl: null,
-        externalSubtitleUrl: null,
+        subtitleStreamIndex: -1,
+        subtitleTracks: [],
       };
     }
     const audioIndex = source.DefaultAudioStreamIndex ?? -1;
@@ -156,23 +156,55 @@ function installPlayer(config) {
     const audio = streams.find(
       (stream) => stream.Index === audioIndex && stream.Type === "Audio",
     );
-    const subtitle = streams.find(
-      (stream) => stream.Index === subtitleIndex && stream.Type === "Subtitle",
-    );
-    const absolute = (value) =>
-      value ? new URL(value, options.url).href : null;
+    const absolute = (value) => {
+      if (!value) return null;
+      try {
+        return new URL(value, options.url).href;
+      } catch {
+        return null;
+      }
+    };
+    const subtitleTracks = streams.flatMap((stream) => {
+      if (
+        stream.Type !== "Subtitle" ||
+        !Number.isInteger(stream.Index) ||
+        stream.Index < 0
+      ) {
+        return [];
+      }
+      const external =
+        stream.IsExternal || stream.DeliveryMethod === "External";
+      const externalUrl = external ? absolute(stream.DeliveryUrl) : null;
+      if (external && !externalUrl) return [];
+      const title = String(
+        stream.DisplayTitle ||
+          stream.Title ||
+          stream.Language ||
+          `Subtitle ${stream.Index}`,
+      );
+      return [
+        {
+          jellyfinIndex: stream.Index,
+          mpvTrack: external
+            ? 0
+            : relativeTrack(streams, stream.Index, "Subtitle"),
+          externalUrl,
+          title,
+          language: String(stream.Language || ""),
+        },
+      ];
+    });
     return {
       audioTrack: audio?.IsExternal
         ? 0
         : relativeTrack(streams, audioIndex, "Audio"),
-      subtitleTrack: subtitle?.IsExternal
-        ? 0
-        : relativeTrack(streams, subtitleIndex, "Subtitle"),
       externalAudioUrl: audio?.IsExternal ? absolute(audio.DeliveryUrl) : null,
-      externalSubtitleUrl:
-        subtitle?.DeliveryMethod === "External"
-          ? absolute(subtitle.DeliveryUrl)
-          : null,
+      subtitleStreamIndex: subtitleTracks.some(
+        (track) => track.jellyfinIndex === subtitleIndex,
+      )
+        ? subtitleIndex
+        : -1,
+      subtitleTracks,
     };
   }
 
@@ -562,7 +594,11 @@ function installPlayer(config) {
         this._syncNativeTrack("Audio", payload?.value),
       );
       bridge.on("subtitleTrack", (payload) =>
-        this._syncNativeTrack("Subtitle", payload?.value),
+        this._syncNativeTrack(
+          "Subtitle",
+          payload?.value,
+          payload?.jellyfinIndex,
+        ),
       );
       bridge.on("next", () => this._changeQueueItem("nextTrack"));
       bridge.on("previous", () => this._changeQueueItem("previousTrack"));
@@ -721,10 +757,13 @@ function installPlayer(config) {
       setTimeout(() => this._fail(code, message), 0);
     }
 
-    _syncNativeTrack(type, mpvIndex) {
+    _syncNativeTrack(type, mpvIndex, explicitJellyfinIndex) {
       if (!this._options) return;
       const streams = this._options.mediaSource?.MediaStreams || [];
-      const index = jellyfinTrackIndex(streams, mpvIndex, type);
+      const index =
+        type === "Subtitle" && Number.isInteger(explicitJellyfinIndex)
+          ? explicitJellyfinIndex
+          : jellyfinTrackIndex(streams, mpvIndex, type);
       if (index == null) return;
       const field =
         type === "Audio" ? "audioStreamIndex" : "subtitleStreamIndex";
@@ -897,12 +936,8 @@ function installPlayer(config) {
       return this.audioStreamIndex ?? -1;
     }
     setSubtitleStreamIndex(index) {
-      const streams = this._options?.mediaSource?.MediaStreams || [];
       this.subtitleStreamIndex = Number(index);
-      invoke(
-        "setSubtitleTrack",
-        relativeTrack(streams, index, "Subtitle"),
-      ).catch(() => {});
+      invoke("setSubtitleTrack", this.subtitleStreamIndex).catch(() => {});
     }
     getSubtitleStreamIndex() {
       return this.subtitleStreamIndex ?? -1;

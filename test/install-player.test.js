@@ -230,6 +230,122 @@ test("passes authenticated Jellyfin MediaSegments to native playback", async (t)
   listeners.get("ended")?.({});
 });
 
+test("offers every Jellyfin external subtitle in MPV before one is selected", async (t) => {
+  const listeners = new Map();
+  const loads = [];
+  const subtitleSelections = [];
+  const bridge = {
+    status: async () => ({ backend: "mpv", startFullscreen: false }),
+    on: (name, callback) => listeners.set(name, callback),
+    load: async (request) => {
+      loads.push(request);
+      return true;
+    },
+    setSubtitleTrack: async (index) => {
+      subtitleSelections.push(index);
+      return true;
+    },
+    openExternal: async () => true,
+  };
+  global.location = new URL("https://media.example/jellyfin/web/");
+  global.window = { jellyfinDesktop: bridge };
+  global.document = { getElementById: () => null };
+  t.after(() => {
+    delete global.document;
+    delete global.location;
+    delete global.window;
+  });
+
+  installPlayer({
+    serverUrl: "https://media.example/jellyfin",
+    backend: "mpv",
+    appName: "Noktus",
+    appVersion: "test",
+    deviceName: "test",
+  });
+  const Player = await global.window.jellyfinDcMpvPlayer();
+  const player = new Player({
+    events: { trigger() {} },
+    appSettings: { get: () => 1, set() {} },
+    playbackManager: { syncPlayEnabled: false },
+  });
+
+  await player.play({
+    url: "https://media.example/jellyfin/Videos/movie-id/stream",
+    item: {
+      Id: "movie-id",
+      MediaType: "Video",
+      RunTimeTicks: 60_000_000,
+      Type: "Movie",
+    },
+    mediaSource: {
+      DefaultSubtitleStreamIndex: -1,
+      MediaStreams: [
+        {
+          Index: 2,
+          Type: "Subtitle",
+          DisplayTitle: "English (ASS)",
+          Language: "eng",
+        },
+        {
+          Index: 4,
+          Type: "Subtitle",
+          IsExternal: true,
+          DeliveryMethod: "External",
+          DeliveryUrl:
+            "https://media.example/jellyfin/Videos/movie-id/Subtitles/4/Stream.srt",
+          DisplayTitle: "Spanish (SRT)",
+          Language: "spa",
+        },
+        {
+          Index: 5,
+          Type: "Subtitle",
+          IsExternal: true,
+          DeliveryMethod: "External",
+          DeliveryUrl:
+            "https://media.example/jellyfin/Videos/movie-id/Subtitles/5/Stream.vtt",
+          DisplayTitle: "French (VTT)",
+          Language: "fra",
+        },
+      ],
+    },
+  });
+
+  assert.equal(loads[0].subtitleStreamIndex, -1);
+  assert.deepEqual(loads[0].subtitleTracks, [
+    {
+      jellyfinIndex: 2,
+      mpvTrack: 1,
+      externalUrl: null,
+      title: "English (ASS)",
+      language: "eng",
+    },
+    {
+      jellyfinIndex: 4,
+      mpvTrack: 0,
+      externalUrl:
+        "https://media.example/jellyfin/Videos/movie-id/Subtitles/4/Stream.srt",
+      title: "Spanish (SRT)",
+      language: "spa",
+    },
+    {
+      jellyfinIndex: 5,
+      mpvTrack: 0,
+      externalUrl:
+        "https://media.example/jellyfin/Videos/movie-id/Subtitles/5/Stream.vtt",
+      title: "French (VTT)",
+      language: "fra",
+    },
+  ]);
+
+  player.setSubtitleStreamIndex(4);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(subtitleSelections, [4]);
+
+  listeners.get("subtitleTrack")({ value: 2, jellyfinIndex: 5 });
+  assert.equal(player.getSubtitleStreamIndex(), 5);
+});
+
 test("only enables MPV queue controls for explicit adjacent playlist items", async (t) => {
   const listeners = new Map();
   const navigationCalls = [];

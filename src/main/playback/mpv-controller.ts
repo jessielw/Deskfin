@@ -15,6 +15,7 @@ import type {
   MpvSegment,
   MpvSegmentType,
   MpvStatus,
+  MpvSubtitleTrack,
 } from "../../shared/types";
 import { detectMpvProvider, isMpvProvider } from "./mpv-provider";
 
@@ -116,6 +117,18 @@ function trackNumber(value: unknown, field: string): number {
     value > 999
   ) {
     throw new Error(`${field} must be an integer between 0 and 999`);
+  }
+  return value;
+}
+
+function streamIndex(value: unknown, field: string): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < -1 ||
+    value > 999
+  ) {
+    throw new Error(`${field} must be an integer between -1 and 999`);
   }
   return value;
 }
@@ -242,6 +255,60 @@ export function normalizeLoadRequest(
     if (rawUrl == null || rawUrl === "") return null;
     return validateMediaUrl(rawUrl, serverUrl);
   };
+  const rawSubtitleTracks = value.subtitleTracks ?? [];
+  if (!Array.isArray(rawSubtitleTracks)) {
+    throw new Error("subtitleTracks must be an array");
+  }
+  const seenSubtitleIndexes = new Set<number>();
+  const subtitleTracks = rawSubtitleTracks
+    .slice(0, 100)
+    .map((candidate, position): MpvSubtitleTrack => {
+      if (!isRecord(candidate)) {
+        throw new Error(`subtitleTracks[${position}] must be an object`);
+      }
+      const jellyfinIndex = streamIndex(
+        candidate.jellyfinIndex,
+        `subtitleTracks[${position}].jellyfinIndex`,
+      );
+      if (jellyfinIndex < 0) {
+        throw new Error(
+          `subtitleTracks[${position}].jellyfinIndex must not be negative`,
+        );
+      }
+      if (seenSubtitleIndexes.has(jellyfinIndex)) {
+        throw new Error(`subtitleTracks contains duplicate Jellyfin indexes`);
+      }
+      seenSubtitleIndexes.add(jellyfinIndex);
+
+      const mpvTrack = trackNumber(
+        candidate.mpvTrack,
+        `subtitleTracks[${position}].mpvTrack`,
+      );
+      const externalUrl =
+        candidate.externalUrl == null || candidate.externalUrl === ""
+          ? null
+          : validateMediaUrl(candidate.externalUrl, serverUrl);
+      if ((externalUrl && mpvTrack !== 0) || (!externalUrl && mpvTrack === 0)) {
+        throw new Error(
+          `subtitleTracks[${position}] must describe either an embedded or external track`,
+        );
+      }
+      if (
+        typeof candidate.title !== "string" ||
+        typeof candidate.language !== "string"
+      ) {
+        throw new Error(
+          `subtitleTracks[${position}] title and language must be strings`,
+        );
+      }
+      return {
+        jellyfinIndex,
+        mpvTrack,
+        externalUrl,
+        title: candidate.title.slice(0, 256),
+        language: candidate.language.slice(0, 64),
+      };
+    });
 
   return {
     url: validateMediaUrl(value.url, serverUrl),
@@ -254,9 +321,12 @@ export function normalizeLoadRequest(
     title: title.slice(0, 512),
     fullscreen,
     audioTrack: trackNumber(value.audioTrack ?? 0, "audioTrack"),
-    subtitleTrack: trackNumber(value.subtitleTrack ?? 0, "subtitleTrack"),
     externalAudioUrl: optionalUrl("externalAudioUrl"),
-    externalSubtitleUrl: optionalUrl("externalSubtitleUrl"),
+    subtitleStreamIndex: streamIndex(
+      value.subtitleStreamIndex ?? -1,
+      "subtitleStreamIndex",
+    ),
+    subtitleTracks,
   };
 }
 
@@ -304,6 +374,8 @@ export class MpvController {
   lastProcessError: Error | null = null;
   ipcPath: string | null = null;
   legacyLoadfileArguments = false;
+  subtitleMpvToJellyfin = new Map<number, number>();
+  subtitleJellyfinToMpv = new Map<number, number>();
 
   constructor({
     serverUrl,
@@ -545,6 +617,7 @@ export class MpvController {
       this.pendingSegments = [];
       this.pendingNavigation = { ...EMPTY_NAVIGATION };
       this.pendingLoad = null;
+      this.resetSubtitleTrackMap();
       if (!wasCurrent) return;
       if (message.reason === "error") {
         this.emit("failed", {
@@ -559,6 +632,20 @@ export class MpvController {
       return;
     }
     if (message.event === "property-change" && message.data != null) {
+      if (message.name === "sid") {
+        const mpvTrack = Number(message.data);
+        const jellyfinIndex =
+          message.data === false || message.data === "no"
+            ? -1
+            : Number.isInteger(mpvTrack)
+              ? (this.subtitleMpvToJellyfin.get(mpvTrack) ?? null)
+              : null;
+        this.emit("subtitleTrack", {
+          value: message.data,
+          jellyfinIndex,
+        });
+        return;
+      }
       const names: Record<string, MpvEventName> = {
         "time-pos": "position",
         duration: "duration",
@@ -568,12 +655,37 @@ export class MpvController {
         speed: "rate",
         fullscreen: "fullscreen",
         aid: "audioTrack",
-        sid: "subtitleTrack",
       };
       const event =
         typeof message.name === "string" ? names[message.name] : null;
       if (event) this.emit(event, { value: message.data });
     }
+  }
+
+  resetSubtitleTrackMap(): void {
+    this.subtitleMpvToJellyfin.clear();
+    this.subtitleJellyfinToMpv.clear();
+  }
+
+  async subtitleTrackIds(): Promise<Set<number>> {
+    const value = await this.command(["get_property", "track-list"]);
+    if (!Array.isArray(value)) {
+      throw new Error("MPV did not return a track list");
+    }
+    return new Set(
+      value.flatMap((track): number[] => {
+        if (
+          !isRecord(track) ||
+          track.type !== "sub" ||
+          typeof track.id !== "number" ||
+          !Number.isInteger(track.id) ||
+          track.id <= 0
+        ) {
+          return [];
+        }
+        return [track.id];
+      }),
+    );
   }
 
   async applySelectedTracks(): Promise<void> {
@@ -585,11 +697,58 @@ export class MpvController {
       } else {
         await this.command(["set_property", "aid", request.audioTrack]);
       }
-      if (request.externalSubtitleUrl) {
-        await this.command(["sub-add", request.externalSubtitleUrl, "select"]);
-      } else {
-        await this.command(["set_property", "sid", request.subtitleTrack]);
+
+      this.resetSubtitleTrackMap();
+      for (const track of request.subtitleTracks) {
+        if (track.externalUrl) continue;
+        this.subtitleJellyfinToMpv.set(track.jellyfinIndex, track.mpvTrack);
+        this.subtitleMpvToJellyfin.set(track.mpvTrack, track.jellyfinIndex);
       }
+
+      let knownSubtitleIds = await this.subtitleTrackIds();
+      for (const track of request.subtitleTracks) {
+        if (!track.externalUrl) continue;
+        try {
+          await this.command([
+            "sub-add",
+            track.externalUrl,
+            "auto",
+            track.title,
+            track.language,
+          ]);
+          if (this.pendingLoad !== request || !this.current) return;
+          const updatedSubtitleIds = await this.subtitleTrackIds();
+          const addedIds = [...updatedSubtitleIds].filter(
+            (id) => !knownSubtitleIds.has(id),
+          );
+          knownSubtitleIds = updatedSubtitleIds;
+          if (addedIds.length !== 1) {
+            console.warn(
+              "[Noktus] Could not identify an external MPV subtitle track.",
+            );
+            continue;
+          }
+          const mpvTrack = addedIds[0];
+          if (mpvTrack == null) continue;
+          this.subtitleJellyfinToMpv.set(track.jellyfinIndex, mpvTrack);
+          this.subtitleMpvToJellyfin.set(mpvTrack, track.jellyfinIndex);
+        } catch (error: unknown) {
+          console.warn(
+            "[Noktus] Could not load an external subtitle:",
+            errorMessage(error),
+          );
+        }
+      }
+
+      const selectedSubtitleTrack =
+        request.subtitleStreamIndex < 0
+          ? null
+          : this.subtitleJellyfinToMpv.get(request.subtitleStreamIndex);
+      await this.command([
+        "set_property",
+        "sid",
+        selectedSubtitleTrack == null ? "no" : selectedSubtitleTrack,
+      ]);
       this.fileLoaded = true;
       await this.sendNavigation();
       await this.sendSegments();
@@ -680,6 +839,7 @@ export class MpvController {
     this.pendingSegments = [];
     this.pendingNavigation = { ...EMPTY_NAVIGATION };
     this.fileLoaded = false;
+    this.resetSubtitleTrackMap();
     this.current = true;
     this.replacing = true;
     try {
@@ -742,9 +902,27 @@ export class MpvController {
       this.pendingSegments = [];
       this.pendingNavigation = { ...EMPTY_NAVIGATION };
       this.pendingLoad = null;
+      this.resetSubtitleTrackMap();
       return true;
     }
     await this.ensureStarted();
+    if (name === "subtitleTrack") {
+      const index = streamIndex(value, "subtitleStreamIndex");
+      if (this.pendingLoad) this.pendingLoad.subtitleStreamIndex = index;
+      if (!this.current || !this.fileLoaded) return true;
+      const track =
+        index < 0 ? null : (this.subtitleJellyfinToMpv.get(index) ?? null);
+      if (index >= 0 && track == null) {
+        throw new Error("The selected Jellyfin subtitle is unavailable in MPV");
+      }
+      await this.command([
+        "osd-auto",
+        "set",
+        "sid",
+        track == null ? "no" : String(track),
+      ]);
+      return true;
+    }
     const commands: Record<string, () => MpvCommand> = {
       play: () => ["osd-auto", "set", "pause", "no"],
       pause: () => ["osd-auto", "set", "pause", "yes"],
@@ -771,10 +949,6 @@ export class MpvController {
         const track = trackNumber(value, "audioTrack");
         return ["osd-auto", "set", "aid", track === 0 ? "no" : String(track)];
       },
-      subtitleTrack: () => {
-        const track = trackNumber(value, "subtitleTrack");
-        return ["osd-auto", "set", "sid", track === 0 ? "no" : String(track)];
-      },
     };
     if (name === "muted" || name === "fullscreen") {
       if (typeof value !== "boolean") {
@@ -796,6 +970,7 @@ export class MpvController {
       this.pendingSegments = [];
       this.pendingNavigation = { ...EMPTY_NAVIGATION };
       this.pendingLoad = null;
+      this.resetSubtitleTrackMap();
     }
     await this.command(makeCommand());
     return true;

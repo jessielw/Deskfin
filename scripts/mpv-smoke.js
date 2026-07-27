@@ -35,9 +35,9 @@ async function main() {
       title: "Noktus MPV smoke test",
       fullscreen: false,
       audioTrack: 0,
-      subtitleTrack: 0,
       externalAudioUrl: null,
-      externalSubtitleUrl: null,
+      subtitleStreamIndex: -1,
+      subtitleTracks: [],
     });
     await controller.execute("stop");
     const fullscreenValues = events

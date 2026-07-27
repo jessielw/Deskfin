@@ -123,7 +123,16 @@ test("exercises the native player against the Jellyfin Web 10.11 contract", asyn
   });
   assert.equal(nativeCalls[0][0], "load");
   assert.equal(nativeCalls[0][1].audioTrack, 1);
-  assert.equal(nativeCalls[0][1].subtitleTrack, 1);
+  assert.equal(nativeCalls[0][1].subtitleStreamIndex, 3);
+  assert.deepEqual(nativeCalls[0][1].subtitleTracks, [
+    {
+      jellyfinIndex: 3,
+      mpvTrack: 1,
+      externalUrl: null,
+      title: "Subtitle 3",
+      language: "",
+    },
+  ]);
 
   listeners.get("loaded")({});
   listeners.get("paused")({ value: true });
