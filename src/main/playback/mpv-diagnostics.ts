@@ -164,7 +164,7 @@ export async function inspectMpvExecutable(
       ...parsed,
       reason: versionSupported
         ? ""
-        : `Deskfin supports MPV ${COMPATIBILITY.minimumMpvVersion} or newer`,
+        : `Noktus supports MPV ${COMPATIBILITY.minimumMpvVersion} or newer`,
     };
   } catch (error: unknown) {
     return {

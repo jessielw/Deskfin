@@ -91,7 +91,7 @@ async function activate(server) {
 async function remove(server) {
   if (
     !window.confirm(
-      `Remove ${serverLabel(server)} from Deskfin?\n\nThis removes only the saved server entry. Its Jellyfin login data will remain on this device.`,
+      `Remove ${serverLabel(server)} from Noktus?\n\nThis removes only the saved server entry. Its Jellyfin login data will remain on this device.`,
     )
   ) {
     return;
@@ -212,7 +212,7 @@ function render() {
   intro.textContent = hasServers
     ? "Choose a server or add another one. Login data stays saved until you explicitly forget it."
     : "Enter the address of the Jellyfin server you want to use.";
-  version.textContent = `Deskfin ${snapshot.appVersion}`;
+  version.textContent = `Noktus ${snapshot.appVersion}`;
   close.hidden = !snapshot.canClose;
   serverSection.hidden = !hasServers;
   renderServers();

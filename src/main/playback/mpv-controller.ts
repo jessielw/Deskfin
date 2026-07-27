@@ -346,7 +346,7 @@ export class MpvController {
     try {
       this.eventSink(event, payload);
     } catch (error: unknown) {
-      console.warn(`[Deskfin] MPV event sink failed for ${event}:`, error);
+      console.warn(`[Noktus] MPV event sink failed for ${event}:`, error);
     }
   }
 
@@ -484,7 +484,7 @@ export class MpvController {
         try {
           this.onMessage(JSON.parse(line));
         } catch (error: unknown) {
-          console.warn("[Deskfin] Ignoring malformed MPV IPC message:", error);
+          console.warn("[Noktus] Ignoring malformed MPV IPC message:", error);
         }
       }
       newline = this.buffer.indexOf("\n");
@@ -600,7 +600,7 @@ export class MpvController {
           : "Jellyfin";
         this.command(["show-text", message, 2200]).catch((error: unknown) => {
           console.warn(
-            "[Deskfin] Could not show MPV playback title:",
+            "[Noktus] Could not show MPV playback title:",
             errorMessage(error),
           );
         });
@@ -727,7 +727,7 @@ export class MpvController {
     } catch (error: unknown) {
       if (this.closing || !canRetryLoad(error)) throw error;
       console.warn(
-        "[Deskfin] MPV connection was lost while loading; restarting it once.",
+        "[Noktus] MPV connection was lost while loading; restarting it once.",
       );
       this.teardownConnection();
       return this.loadRequest(request);
@@ -868,7 +868,7 @@ export class MpvController {
         fs.unlinkSync(this.ipcPath);
       } catch (error: unknown) {
         if (errorCode(error) !== "ENOENT") {
-          console.warn("[Deskfin] Could not remove MPV socket:", error);
+          console.warn("[Noktus] Could not remove MPV socket:", error);
         }
       }
     }

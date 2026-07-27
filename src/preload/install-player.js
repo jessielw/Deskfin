@@ -34,7 +34,7 @@ function installPlayer(config) {
       state.startFullscreen = status.startFullscreen !== false;
     })
     .catch((error) => {
-      console.warn("[Deskfin] Native bridge initialization failed:", error);
+      console.warn("[Noktus] Native bridge initialization failed:", error);
     });
 
   const invoke = (method, ...args) => {
@@ -48,12 +48,12 @@ function installPlayer(config) {
     if (typeof requestId !== "string" || !requestId) return;
     if (activeMpvPlayer) {
       activeMpvPlayer._prepareForShutdown(requestId).catch((error) => {
-        console.warn("[Deskfin] Playback shutdown failed:", error);
+        console.warn("[Noktus] Playback shutdown failed:", error);
       });
     } else {
       invoke("shutdownReady", requestId).catch((error) => {
         console.warn(
-          "[Deskfin] Could not acknowledge playback shutdown:",
+          "[Noktus] Could not acknowledge playback shutdown:",
           error,
         );
       });
@@ -61,7 +61,7 @@ function installPlayer(config) {
   });
 
   const mpvProfile = {
-    Name: "Deskfin Electron MPV",
+    Name: "Noktus Electron MPV",
     MaxStreamingBitrate: 140000000,
     MaxStaticBitrate: 140000000,
     MusicStreamingTranscodingBitrate: 1280000,
@@ -251,7 +251,7 @@ function installPlayer(config) {
       if (!response.ok) return [];
       return normalizeMediaSegments(await response.json());
     } catch (error) {
-      console.debug("[Deskfin] MediaSegments unavailable:", error);
+      console.debug("[Noktus] MediaSegments unavailable:", error);
       return [];
     }
   }
@@ -333,7 +333,7 @@ function installPlayer(config) {
           : null;
       return navigationFromPlaylist(playlist, options, currentIndex);
     } catch (error) {
-      console.debug("[Deskfin] Jellyfin playlist unavailable:", error);
+      console.debug("[Noktus] Jellyfin playlist unavailable:", error);
       return { previous: false, next: false };
     }
   }
@@ -486,7 +486,7 @@ function installPlayer(config) {
       this.playbackManager = args.playbackManager;
       this.type = "mediaplayer";
       this.id = "jellyfindcelectronmpvplayer";
-      this.name = "Deskfin Electron MPV";
+      this.name = "Noktus Electron MPV";
       this.priority = -1;
       this.isLocalPlayer = true;
       this.isFetching = false;
@@ -633,7 +633,7 @@ function installPlayer(config) {
           })
           .catch((error) => {
             console.debug(
-              "[Deskfin] Could not pass MediaSegments to MPV:",
+              "[Noktus] Could not pass MediaSegments to MPV:",
               error,
             );
           });
@@ -682,7 +682,7 @@ function installPlayer(config) {
           })
           .catch((error) => {
             console.debug(
-              "[Deskfin] Could not pass playlist state to MPV:",
+              "[Noktus] Could not pass playlist state to MPV:",
               error,
             );
           });
@@ -708,7 +708,7 @@ function installPlayer(config) {
       } finally {
         await invoke("shutdownReady", requestId).catch((error) => {
           console.warn(
-            "[Deskfin] Could not acknowledge playback shutdown:",
+            "[Noktus] Could not acknowledge playback shutdown:",
             error,
           );
         });
@@ -742,7 +742,7 @@ function installPlayer(config) {
       )
         return;
       Promise.resolve(this.playbackManager[method](this)).catch((error) => {
-        console.warn(`[Deskfin] Jellyfin ${method} failed:`, error);
+        console.warn(`[Noktus] Jellyfin ${method} failed:`, error);
       });
     }
 
@@ -761,7 +761,7 @@ function installPlayer(config) {
       if (!this._options) return;
       const item = this._options.item;
       const reason = String(message || code || "Unknown MPV error");
-      console.warn(`[Deskfin] MPV failed (${code}):`, reason);
+      console.warn(`[Noktus] MPV failed (${code}):`, reason);
       invoke("stop").catch(() => {});
       setTimeout(
         () =>
@@ -805,7 +805,7 @@ function installPlayer(config) {
 
     stop() {
       const stopping = invoke("stop").catch((error) => {
-        console.warn("[Deskfin] Could not stop MPV cleanly:", error);
+        console.warn("[Noktus] Could not stop MPV cleanly:", error);
       });
       this._finish();
       return stopping.then(() => undefined);

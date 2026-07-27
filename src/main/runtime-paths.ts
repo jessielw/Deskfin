@@ -49,6 +49,6 @@ export function resolveAppIconPath({
   resourcesPath,
 }: AppResourcePathOptions): string {
   const base = isPackaged ? resourcesPath : path.join(appPath, "resources");
-  const fileName = platform === "win32" ? "deskfin.ico" : "deskfin.png";
+  const fileName = platform === "win32" ? "noktus.ico" : "noktus.png";
   return path.join(base, "icons", fileName);
 }

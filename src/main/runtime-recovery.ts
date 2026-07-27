@@ -29,7 +29,7 @@ export function mainRecoveryMessage(
 ): string {
   const summary =
     reason === "resume"
-      ? "Deskfin could not reconnect to Jellyfin after the computer resumed."
+      ? "Noktus could not reconnect to Jellyfin after the computer resumed."
       : reason === "renderer-crash"
         ? "The Jellyfin Web process stopped unexpectedly."
         : reason === "unresponsive"
@@ -47,7 +47,7 @@ export function rendererRecoveryPrompt(
       title: "Jellyfin Web is not responding",
       message: "The Jellyfin interface has stopped responding.",
       detail,
-      buttons: ["Wait", "Reload Deskfin", "Switch server"],
+      buttons: ["Wait", "Reload Noktus", "Switch server"],
       defaultId: 0,
       cancelId: 0,
     };
@@ -56,7 +56,7 @@ export function rendererRecoveryPrompt(
     title: "Jellyfin Web stopped",
     message: "The Jellyfin interface stopped unexpectedly.",
     detail,
-    buttons: ["Reload Deskfin", "Switch server", "Quit"],
+    buttons: ["Reload Noktus", "Switch server", "Quit"],
     defaultId: 0,
     cancelId: 2,
   };

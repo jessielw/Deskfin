@@ -12,7 +12,7 @@ const projectRoot = path.resolve(
   "..",
 );
 const userDataPath = await fs.mkdtemp(
-  path.join(os.tmpdir(), "deskfin-recovery-smoke-"),
+  path.join(os.tmpdir(), "noktus-recovery-smoke-"),
 );
 
 const server = http.createServer((request, response) => {
@@ -22,7 +22,7 @@ const server = http.createServer((request, response) => {
     response.end(
       JSON.stringify({
         ProductName: "Jellyfin Server",
-        Id: "deskfin-runtime-recovery-smoke",
+        Id: "noktus-runtime-recovery-smoke",
         ServerName: "Recovery Smoke",
         Version: "10.11.0",
       }),
@@ -55,8 +55,7 @@ if (!address || typeof address === "string") {
 }
 const serverUrl = `http://127.0.0.1:${address.port}`;
 const electronArguments = [
-  ...(process.platform === "linux" &&
-  process.env.DESKFIN_TEST_NO_SANDBOX === "1"
+  ...(process.platform === "linux" && process.env.NOKTUS_TEST_NO_SANDBOX === "1"
     ? ["--no-sandbox"]
     : []),
   projectRoot,

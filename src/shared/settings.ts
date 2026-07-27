@@ -190,7 +190,7 @@ export function loadSettings(
   } catch (error: unknown) {
     if (errorCode(error) !== "ENOENT") {
       logger.warn(
-        `[Deskfin] Could not read settings ${filePath}:`,
+        `[Noktus] Could not read settings ${filePath}:`,
         errorMessage(error),
       );
     }

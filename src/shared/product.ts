@@ -1,7 +1,7 @@
 export const PRODUCT_IDENTITY = Object.freeze({
-  name: "Deskfin",
-  packageName: "deskfin",
-  appId: "io.github.jessielw.deskfin",
-  executableName: "Deskfin",
+  name: "Noktus",
+  packageName: "noktus",
+  appId: "io.github.jessielw.noktus",
+  executableName: "Noktus",
   category: "public.app-category.entertainment",
 });

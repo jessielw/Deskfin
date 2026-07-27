@@ -4,7 +4,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { packageDeskfin } from "./package-app.mjs";
+import { packageNoktus } from "./package-app.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(scriptPath), "..");
@@ -114,9 +114,9 @@ export async function makeReleaseArchive() {
   if (typeof version !== "string" || !version) {
     throw new Error("package.json is missing version");
   }
-  assertReleaseTagVersion(version, process.env.DESKFIN_RELEASE_TAG || "");
+  assertReleaseTagVersion(version, process.env.NOKTUS_RELEASE_TAG || "");
 
-  const [bundlePath] = await packageDeskfin();
+  const [bundlePath] = await packageNoktus();
   if (!bundlePath) throw new Error("Electron Packager returned no application");
   const releaseDirectory = path.join(projectRoot, "out", "release");
   const archiveName = releaseArchiveName({

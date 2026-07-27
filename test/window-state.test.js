@@ -99,7 +99,7 @@ test("enforces the minimum size while keeping the window on screen", () => {
 
 test("round trips window state through its own JSON file", (t) => {
   const directory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "deskfin-window-state-"),
+    path.join(os.tmpdir(), "noktus-window-state-"),
   );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, "window-state.json");
@@ -114,7 +114,7 @@ test("round trips window state through its own JSON file", (t) => {
 
 test("recovers from malformed window state without failing startup", (t) => {
   const directory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "deskfin-window-state-"),
+    path.join(os.tmpdir(), "noktus-window-state-"),
   );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, "window-state.json");

@@ -151,7 +151,7 @@ test("adds the Jellyfin OSC preset without discarding other MPV script options",
   assert.ok(args.includes("--script=jellyfin_dc.lua"));
 });
 
-test("uses a dedicated mpv.net process profile while retaining Deskfin controls", () => {
+test("uses a dedicated mpv.net process profile while retaining Noktus controls", () => {
   const args = buildMpvArguments(
     "test-ipc",
     "jellyfin",

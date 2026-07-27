@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { packageDeskfin } from "./package-app.mjs";
+import { packageNoktus } from "./package-app.mjs";
 
 const SMOKE_TIMEOUT_MS = 45_000;
 const projectRoot = path.resolve(
@@ -12,7 +12,7 @@ const projectRoot = path.resolve(
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"),
 );
-const executableName = packageJson.deskfin.executableName;
+const executableName = packageJson.noktus.executableName;
 const productName = packageJson.productName;
 
 function executablePath(bundlePath) {
@@ -34,7 +34,7 @@ function executablePath(bundlePath) {
 function launchSmoke(executable, userDataPath) {
   const smokeArguments = [
     ...(process.platform === "linux" &&
-    process.env.DESKFIN_TEST_NO_SANDBOX === "1"
+    process.env.NOKTUS_TEST_NO_SANDBOX === "1"
       ? ["--no-sandbox"]
       : []),
     "--smoke-packaged",
@@ -60,19 +60,19 @@ function launchSmoke(executable, userDataPath) {
       else {
         finish(
           new Error(
-            `Packaged Deskfin smoke exited with ${code ?? signal ?? "unknown"}`,
+            `Packaged Noktus smoke exited with ${code ?? signal ?? "unknown"}`,
           ),
         );
       }
     });
     const timer = setTimeout(() => {
       child.kill();
-      finish(new Error("Packaged Deskfin smoke timed out"));
+      finish(new Error("Packaged Noktus smoke timed out"));
     }, SMOKE_TIMEOUT_MS);
   });
 }
 
-const [bundlePath] = await packageDeskfin();
+const [bundlePath] = await packageNoktus();
 if (!bundlePath) throw new Error("Electron Packager returned no application");
 const executable = executablePath(bundlePath);
 if (!fs.existsSync(executable)) {

@@ -11,30 +11,30 @@ test("uses platform-appropriate portable release archive names", async () => {
   const { releaseArchiveName } = await archiveTools();
   assert.equal(
     releaseArchiveName({
-      productName: "Deskfin",
+      productName: "Noktus",
       version: "0.1.0-beta.1",
       platform: "win32",
       arch: "x64",
     }),
-    "Deskfin-0.1.0-beta.1-windows-x64.zip",
+    "Noktus-0.1.0-beta.1-windows-x64.zip",
   );
   assert.equal(
     releaseArchiveName({
-      productName: "Deskfin",
+      productName: "Noktus",
       version: "0.1.0-beta.1",
       platform: "darwin",
       arch: "arm64",
     }),
-    "Deskfin-0.1.0-beta.1-macos-arm64.zip",
+    "Noktus-0.1.0-beta.1-macos-arm64.zip",
   );
   assert.equal(
     releaseArchiveName({
-      productName: "Deskfin",
+      productName: "Noktus",
       version: "0.1.0-beta.1",
       platform: "linux",
       arch: "x64",
     }),
-    "Deskfin-0.1.0-beta.1-linux-x64.tar.gz",
+    "Noktus-0.1.0-beta.1-linux-x64.tar.gz",
   );
 });
 

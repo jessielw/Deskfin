@@ -23,7 +23,7 @@ test("changes native-player eligibility without reinstalling the Jellyfin adapte
   const result = installPlayer({
     serverUrl: "https://media.example/jellyfin",
     backend: "web",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
     deviceName: "test",
   });
@@ -80,7 +80,7 @@ test("reports stopped playback before acknowledging native shutdown", async (t) 
   installPlayer({
     serverUrl: "https://media.example/jellyfin",
     backend: "mpv",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
     deviceName: "test",
   });
@@ -143,7 +143,7 @@ test("acknowledges shutdown immediately when MPV has no active item", async (t) 
   installPlayer({
     serverUrl: "https://media.example/jellyfin",
     backend: "mpv",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
     deviceName: "test",
   });
@@ -197,7 +197,7 @@ test("passes authenticated Jellyfin MediaSegments to native playback", async (t)
   installPlayer({
     serverUrl: "https://media.example/jellyfin",
     backend: "mpv",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
     deviceName: "test",
   });
@@ -254,7 +254,7 @@ test("only enables MPV queue controls for explicit adjacent playlist items", asy
   installPlayer({
     serverUrl: "https://media.example/jellyfin",
     backend: "mpv",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
     deviceName: "test",
   });
@@ -354,7 +354,7 @@ test("fails closed when a repeated item id makes queue position ambiguous", asyn
   installPlayer({
     serverUrl: "https://media.example/jellyfin",
     backend: "mpv",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
     deviceName: "test",
   });
@@ -410,7 +410,7 @@ test("refreshes navigation after Jellyfin establishes the initial series queue",
   installPlayer({
     serverUrl: "https://media.example/jellyfin",
     backend: "mpv",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
     deviceName: "test",
   });

@@ -4,11 +4,11 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { packageDeskfin } from "./package-app.mjs";
+import { packageNoktus } from "./package-app.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(scriptPath), "..");
-const PACKAGE_NAME = "deskfin";
+const PACKAGE_NAME = "noktus";
 const ARCHITECTURE = "amd64";
 const BUNDLE_EXECUTABLES = ["chrome_crashpad_handler"];
 
@@ -51,12 +51,12 @@ function controlFile(version, description) {
     `Package: ${PACKAGE_NAME}`,
     `Version: ${version}`,
     `Architecture: ${ARCHITECTURE}`,
-    "Maintainer: Deskfin contributors <deskfin@localhost>",
+    "Maintainer: Noktus contributors <noktus@localhost>",
     "Section: video",
     "Priority: optional",
     "Depends: libasound2 | libasound2t64, libatk-bridge2.0-0, libatk1.0-0, libc6, libcairo2, libcups2, libdbus-1-3, libdrm2, libexpat1, libgbm1, libglib2.0-0, libgtk-3-0, libnspr4, libnss3, libpango-1.0-0, libx11-6, libx11-xcb1, libxcb1, libxcomposite1, libxdamage1, libxext6, libxfixes3, libxkbcommon0, libxrandr2, libxrender1, libxshmfence1, libxss1, libxtst6, xdg-utils",
     `Description: ${synopsis}`,
-    " Deskfin is a thin Jellyfin desktop client with Web and MPV playback.",
+    " Noktus is a thin Jellyfin desktop client with Web and MPV playback.",
     "",
   ].join("\n");
 }
@@ -67,33 +67,33 @@ function desktopFile(productName, description) {
     "Type=Application",
     `Name=${productName}`,
     `Comment=${description}`,
-    "Exec=deskfin %U",
-    "Icon=deskfin",
+    "Exec=noktus %U",
+    "Icon=noktus",
     "Terminal=false",
     "Categories=AudioVideo;Video;Network;",
-    "StartupWMClass=Deskfin",
+    "StartupWMClass=Noktus",
     "",
   ].join("\n");
 }
 
 function launcherFile(executableName) {
-  return `#!/bin/sh\nexec /opt/Deskfin/${executableName} "$@"\n`;
+  return `#!/bin/sh\nexec /opt/Noktus/${executableName} "$@"\n`;
 }
 
 function postInstallFile(executableName) {
   return [
     "#!/bin/sh",
     "set -eu",
-    "chown root:root /opt/Deskfin",
-    "chmod 755 /opt/Deskfin",
-    `chown root:root /opt/Deskfin/${executableName}`,
-    `chmod 755 /opt/Deskfin/${executableName}`,
-    "if [ -e /opt/Deskfin/chrome_crashpad_handler ]; then",
-    "  chown root:root /opt/Deskfin/chrome_crashpad_handler",
-    "  chmod 755 /opt/Deskfin/chrome_crashpad_handler",
+    "chown root:root /opt/Noktus",
+    "chmod 755 /opt/Noktus",
+    `chown root:root /opt/Noktus/${executableName}`,
+    `chmod 755 /opt/Noktus/${executableName}`,
+    "if [ -e /opt/Noktus/chrome_crashpad_handler ]; then",
+    "  chown root:root /opt/Noktus/chrome_crashpad_handler",
+    "  chmod 755 /opt/Noktus/chrome_crashpad_handler",
     "fi",
-    "chown root:root /opt/Deskfin/chrome-sandbox",
-    "chmod 4755 /opt/Deskfin/chrome-sandbox",
+    "chown root:root /opt/Noktus/chrome-sandbox",
+    "chmod 4755 /opt/Noktus/chrome-sandbox",
     "",
   ].join("\n");
 }
@@ -122,7 +122,7 @@ export async function makeDeb() {
     await fsp.readFile(path.join(projectRoot, "package.json"), "utf8"),
   );
   const { productName, version, description } = packageJson;
-  const executableName = packageJson.deskfin?.executableName;
+  const executableName = packageJson.noktus?.executableName;
   if (
     typeof productName !== "string" ||
     !productName ||
@@ -136,7 +136,7 @@ export async function makeDeb() {
     throw new Error("package.json is missing Debian package metadata");
   }
 
-  const [bundlePath] = await packageDeskfin();
+  const [bundlePath] = await packageNoktus();
   if (!bundlePath) throw new Error("Electron Packager returned no application");
 
   const outputDirectory = path.join(projectRoot, "out", "release");
@@ -202,7 +202,7 @@ export async function makeDeb() {
     { recursive: true },
   );
   await fsp.copyFile(
-    path.join(projectRoot, "resources", "icons", "deskfin.png"),
+    path.join(projectRoot, "resources", "icons", "noktus.png"),
     path.join(
       stagingDirectory,
       "usr",

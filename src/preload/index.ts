@@ -123,7 +123,7 @@ try {
       {
         serverUrl,
         backend: mode,
-        appName: "Deskfin",
+        appName: "Noktus",
         appVersion,
         deviceName: "Electron",
       },

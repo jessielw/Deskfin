@@ -137,7 +137,7 @@ export function loadWindowState(
   } catch (error: unknown) {
     if (errorCode(error) !== "ENOENT") {
       logger.warn(
-        `[Deskfin] Could not read window state ${filePath}:`,
+        `[Noktus] Could not read window state ${filePath}:`,
         errorMessage(error),
       );
     }

@@ -74,7 +74,7 @@ function renderMpvDiagnostic(diagnostic) {
     : "MPV player is unavailable";
   const source = `${mpvSourceLabel(diagnostic.source)}: ${diagnostic.executable}`;
   const ignored = diagnostic.configuredPathIgnored
-    ? "The saved path was unavailable; Deskfin selected a fallback. "
+    ? "The saved path was unavailable; Noktus selected a fallback. "
     : "";
   mpvDiagnosticDetail.textContent = diagnostic.available
     ? `${ignored}${source}${diagnostic.supported ? "" : `. ${diagnostic.reason}`}`
@@ -89,7 +89,7 @@ async function initialize() {
     mpvPresentation.value = settings.mpvPresentation;
     mpvFullscreen.checked = settings.startMpvFullscreen;
     renderMpvDiagnostic(settings.mpvDiagnostic);
-    version.textContent = `Deskfin ${settings.appVersion}`;
+    version.textContent = `Noktus ${settings.appVersion}`;
     updateMpvState();
     playbackMode.focus();
   } catch (error) {

@@ -78,7 +78,7 @@ test("exercises the native player against the Jellyfin Web 10.11 contract", asyn
   const installation = installPlayer({
     serverUrl: "https://media.example/jellyfin",
     backend: "mpv",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
     deviceName: "contract-test",
   });
@@ -88,7 +88,7 @@ test("exercises the native player against the Jellyfin Web 10.11 contract", asyn
   ]);
   assert.deepEqual(await global.window.NativeShell.AppHost.init(), {
     deviceName: "contract-test",
-    appName: "Deskfin",
+    appName: "Noktus",
     appVersion: "test",
   });
 

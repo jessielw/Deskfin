@@ -10,13 +10,13 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact: deskfin-windows-x64
+            artifact: noktus-windows-x64
           - os: macos-15
-            artifact: deskfin-macos-arm64
+            artifact: noktus-macos-arm64
           - os: macos-15-intel
-            artifact: deskfin-macos-x64
+            artifact: noktus-macos-x64
           - os: ubuntu-22.04
-            artifact: deskfin-linux-x64
+            artifact: noktus-linux-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +30,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: out/Deskfin-*
+          path: out/Noktus-*
           if-no-files-found: error
           retention-days: 14

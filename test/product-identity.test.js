@@ -14,20 +14,20 @@ const packageJson = JSON.parse(
 test("runtime and package metadata share one stable product identity", () => {
   assert.equal(packageJson.name, PRODUCT_IDENTITY.packageName);
   assert.equal(packageJson.productName, PRODUCT_IDENTITY.name);
-  assert.equal(packageJson.deskfin.appId, PRODUCT_IDENTITY.appId);
+  assert.equal(packageJson.noktus.appId, PRODUCT_IDENTITY.appId);
   assert.equal(
-    packageJson.deskfin.executableName,
+    packageJson.noktus.executableName,
     PRODUCT_IDENTITY.executableName,
   );
-  assert.equal(packageJson.deskfin.category, PRODUCT_IDENTITY.category);
+  assert.equal(packageJson.noktus.category, PRODUCT_IDENTITY.category);
   assert.match(PRODUCT_IDENTITY.appId, /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/);
 });
 
 test("all package icon formats are present and recognizable", () => {
   const iconDirectory = path.join(projectRoot, "resources", "icons");
-  const png = fs.readFileSync(path.join(iconDirectory, "deskfin.png"));
-  const ico = fs.readFileSync(path.join(iconDirectory, "deskfin.ico"));
-  const icns = fs.readFileSync(path.join(iconDirectory, "deskfin.icns"));
+  const png = fs.readFileSync(path.join(iconDirectory, "noktus.png"));
+  const ico = fs.readFileSync(path.join(iconDirectory, "noktus.ico"));
+  const icns = fs.readFileSync(path.join(iconDirectory, "noktus.icns"));
 
   assert.deepEqual(
     [...png.subarray(0, 8)],

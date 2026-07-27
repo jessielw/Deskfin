@@ -31,7 +31,7 @@ jobs:
             label: Linux x64
     runs-on: ${{ matrix.os }}
     env:
-      DESKFIN_RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      NOKTUS_RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,25 +51,25 @@ jobs:
         shell: bash
         run: |
           package_contents="$(mktemp)"
-          dpkg-deb --contents out/release/Deskfin_*.deb > "$package_contents"
-          grep --quiet 'drwxr-xr-x root/root.*opt/Deskfin/$' "$package_contents"
-          grep --quiet 'rwxr-xr-x root/root.*opt/Deskfin/Deskfin' "$package_contents"
-          grep --quiet 'rwsr-xr-x root/root.*opt/Deskfin/chrome-sandbox' "$package_contents"
-          grep --quiet 'usr/bin/deskfin' "$package_contents"
-          grep --quiet 'usr/share/applications/deskfin.desktop' "$package_contents"
+          dpkg-deb --contents out/release/Noktus_*.deb > "$package_contents"
+          grep --quiet 'drwxr-xr-x root/root.*opt/Noktus/$' "$package_contents"
+          grep --quiet 'rwxr-xr-x root/root.*opt/Noktus/Noktus' "$package_contents"
+          grep --quiet 'rwsr-xr-x root/root.*opt/Noktus/chrome-sandbox' "$package_contents"
+          grep --quiet 'usr/bin/noktus' "$package_contents"
+          grep --quiet 'usr/share/applications/noktus.desktop' "$package_contents"
       - name: Install and launch Debian package
         if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ./out/release/Deskfin_*.deb
-          stat --format='%A %U:%G %n' /opt/Deskfin/Deskfin /opt/Deskfin/chrome-sandbox
-          timeout 45s xvfb-run --auto-servernum /usr/bin/deskfin --smoke-packaged --smoke-user-data="$(mktemp -d)"
+          sudo apt-get install --yes ./out/release/Noktus_*.deb
+          stat --format='%A %U:%G %n' /opt/Noktus/Noktus /opt/Noktus/chrome-sandbox
+          timeout 45s xvfb-run --auto-servernum /usr/bin/noktus --smoke-packaged --smoke-user-data="$(mktemp -d)"
       - name: Keep release archives from failed uploads
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deskfin-${{ matrix.os }}-release-output
+          name: noktus-${{ matrix.os }}-release-output
           path: out/release/*
           if-no-files-found: ignore
           retention-days: 14
@@ -77,4 +77,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload "$DESKFIN_RELEASE_TAG" out/release/* --clobber
+        run: gh release upload "$NOKTUS_RELEASE_TAG" out/release/* --clobber

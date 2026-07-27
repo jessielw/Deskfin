@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(scriptPath), "..");
 
-export async function packageDeskfin() {
+export async function packageNoktus() {
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"),
   );
   const productName = packageJson.productName;
-  const product = packageJson.deskfin;
+  const product = packageJson.noktus;
   if (
     typeof productName !== "string" ||
     !productName ||
@@ -19,7 +19,7 @@ export async function packageDeskfin() {
     typeof product?.executableName !== "string" ||
     typeof product?.category !== "string"
   ) {
-    throw new Error("package.json is missing the Deskfin product identity");
+    throw new Error("package.json is missing the Noktus product identity");
   }
   const electronVersion = packageJson.devDependencies?.electron;
   if (
@@ -41,9 +41,9 @@ export async function packageDeskfin() {
   const iconDirectory = path.join(projectRoot, "resources", "icons");
   const iconPath =
     process.platform === "win32"
-      ? path.join(iconDirectory, "deskfin.ico")
+      ? path.join(iconDirectory, "noktus.ico")
       : process.platform === "darwin"
-        ? path.join(iconDirectory, "deskfin.icns")
+        ? path.join(iconDirectory, "noktus.icns")
         : undefined;
 
   return packager({
@@ -53,10 +53,10 @@ export async function packageDeskfin() {
     appBundleId: product.appId,
     helperBundleId: `${product.appId}.helper`,
     appCategoryType: product.category,
-    appCopyright: `Copyright (c) ${new Date().getUTCFullYear()} Deskfin contributors`,
+    appCopyright: `Copyright (c) ${new Date().getUTCFullYear()} Noktus contributors`,
     icon: iconPath,
     win32metadata: {
-      CompanyName: "Deskfin contributors",
+      CompanyName: "Noktus contributors",
       FileDescription: productName,
       InternalName: product.executableName,
       OriginalFilename: `${product.executableName}.exe`,
@@ -92,6 +92,6 @@ export async function packageDeskfin() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
-  const paths = await packageDeskfin();
+  const paths = await packageNoktus();
   for (const outputPath of paths) console.log(outputPath);
 }

@@ -50,7 +50,7 @@ test("resolves development resources from the application tree", () => {
       platform: "linux",
       resourcesPath: path.resolve("packaged-resources"),
     }),
-    path.join(appPath, "resources", "icons", "deskfin.png"),
+    path.join(appPath, "resources", "icons", "noktus.png"),
   );
 });
 
@@ -71,7 +71,7 @@ test("resolves the MPV bridge from packaged extra resources", () => {
       platform: "win32",
       resourcesPath,
     }),
-    path.join(resourcesPath, "icons", "deskfin.ico"),
+    path.join(resourcesPath, "icons", "noktus.ico"),
   );
 });
 
@@ -84,7 +84,7 @@ test("uses the multi-resolution ICO only for Windows windows", () => {
       platform: "win32",
       resourcesPath: path.resolve("packaged-resources"),
     }),
-    path.join(appPath, "resources", "icons", "deskfin.ico"),
+    path.join(appPath, "resources", "icons", "noktus.ico"),
   );
   assert.equal(
     resolveAppIconPath({
@@ -93,6 +93,6 @@ test("uses the multi-resolution ICO only for Windows windows", () => {
       platform: "darwin",
       resourcesPath: path.resolve("packaged-resources"),
     }),
-    path.join(appPath, "resources", "icons", "deskfin.png"),
+    path.join(appPath, "resources", "icons", "noktus.png"),
   );
 });

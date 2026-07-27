@@ -79,7 +79,7 @@ export class RotatingFileLogger {
       throw new Error("Log limits must be positive");
     }
     this.directory = directory;
-    this.filePath = path.join(directory, "deskfin.log");
+    this.filePath = path.join(directory, "noktus.log");
     this.maxBytes = maxBytes;
     this.maxFiles = maxFiles;
     this.now = now;
@@ -160,7 +160,7 @@ export function installFileLogging(directory: string): InstalledFileLogging {
       } catch (error: unknown) {
         writable = false;
         original.error(
-          formatLogValues(["[Deskfin] File logging failed:", error]),
+          formatLogValues(["[Noktus] File logging failed:", error]),
         );
       }
     };
@@ -168,6 +168,6 @@ export function installFileLogging(directory: string): InstalledFileLogging {
   console.log = install("INFO", original.log);
   console.warn = install("WARN", original.warn);
   console.error = install("ERROR", original.error);
-  console.log("[Deskfin] Local logging started");
+  console.log("[Noktus] Local logging started");
   return { directory: logger.directory, filePath: logger.filePath };
 }

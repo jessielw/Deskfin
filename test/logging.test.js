@@ -42,7 +42,7 @@ test("formats structured values and errors before redaction", () => {
 });
 
 test("rotates bounded log files and never writes secrets", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "deskfin-logs-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "noktus-logs-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const logger = new RotatingFileLogger(directory, {
     maxBytes: 220,
@@ -59,7 +59,7 @@ test("rotates bounded log files and never writes secrets", (t) => {
 
   const files = fs
     .readdirSync(directory)
-    .filter((file) => file.startsWith("deskfin.log"));
+    .filter((file) => file.startsWith("noktus.log"));
   const contents = files
     .map((file) => fs.readFileSync(path.join(directory, file), "utf8"))
     .join("\n");

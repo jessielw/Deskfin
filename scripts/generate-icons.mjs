@@ -6,7 +6,7 @@ import sharp from "sharp";
 const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(scriptPath), "..");
 const iconDirectory = path.join(projectRoot, "resources", "icons");
-const sourcePath = path.join(iconDirectory, "deskfin.svg");
+const sourcePath = path.join(iconDirectory, "noktus.svg");
 const checkOnly = process.argv.includes("--check");
 
 const source = fs.readFileSync(sourcePath);
@@ -76,13 +76,13 @@ function createIcns(images) {
 const icoSizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 const icnsSizes = [16, 32, 64, 128, 256, 512, 1024];
 const output = new Map([
-  [path.join(iconDirectory, "deskfin.png"), pngs.get(512)],
+  [path.join(iconDirectory, "noktus.png"), pngs.get(512)],
   [
-    path.join(iconDirectory, "deskfin.ico"),
+    path.join(iconDirectory, "noktus.ico"),
     createIco(icoSizes.map((size) => ({ size, data: pngs.get(size) }))),
   ],
   [
-    path.join(iconDirectory, "deskfin.icns"),
+    path.join(iconDirectory, "noktus.icns"),
     createIcns(icnsSizes.map((size) => ({ size, data: pngs.get(size) }))),
   ],
 ]);
@@ -107,4 +107,4 @@ for (const [filePath, expected] of output) {
   }
 }
 
-if (checkOnly) console.log("Deskfin icon assets are current");
+if (checkOnly) console.log("Noktus icon assets are current");

@@ -30,9 +30,9 @@ async function main() {
     await controller.execute("fullscreen", false);
     await new Promise((resolve) => setTimeout(resolve, 50));
     await controller.load({
-      url: "http://127.0.0.1:9/deskfin-mpv-smoke",
+      url: "http://127.0.0.1:9/noktus-mpv-smoke",
       startSeconds: 1.25,
-      title: "Deskfin MPV smoke test",
+      title: "Noktus MPV smoke test",
       fullscreen: false,
       audioTrack: 0,
       subtitleTrack: 0,
@@ -59,12 +59,12 @@ async function main() {
       );
     }
     console.log(
-      `[Deskfin] MPV IPC is ready via ${controller.status().executable}`,
+      `[Noktus] MPV IPC is ready via ${controller.status().executable}`,
     );
-    console.log("[Deskfin] MPV fullscreen state is synchronized");
-    console.log("[Deskfin] MPV native OSD commands are accepted");
-    console.log("[Deskfin] MPV-to-Jellyfin control messages are accepted");
-    console.log("[Deskfin] MPV loadfile command is accepted");
+    console.log("[Noktus] MPV fullscreen state is synchronized");
+    console.log("[Noktus] MPV native OSD commands are accepted");
+    console.log("[Noktus] MPV-to-Jellyfin control messages are accepted");
+    console.log("[Noktus] MPV loadfile command is accepted");
   } finally {
     controller.close();
   }

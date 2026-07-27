@@ -1,6 +1,6 @@
 import { redactSensitive } from "./logging";
 
-export interface DeskfinDiagnostics {
+export interface NoktusDiagnostics {
   generatedAt: string;
   application: {
     name: string;
@@ -45,10 +45,10 @@ export interface DeskfinDiagnostics {
   codecs?: Record<string, unknown>;
 }
 
-export function createDiagnosticsReport(value: DeskfinDiagnostics): string {
+export function createDiagnosticsReport(value: NoktusDiagnostics): string {
   return redactSensitive(
     [
-      "Deskfin diagnostics",
+      "Noktus diagnostics",
       "No access tokens, server addresses, media URLs, or account details are included.",
       "",
       JSON.stringify(value, null, 2),

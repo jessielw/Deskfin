@@ -31,7 +31,7 @@ jobs:
       - name: Runtime recovery smoke
         if: runner.os == 'Linux'
         env:
-          DESKFIN_TEST_NO_SANDBOX: "1"
+          NOKTUS_TEST_NO_SANDBOX: "1"
         run: xvfb-run --auto-servernum npm run smoke:recovery
       - name: Package and smoke test
         if: runner.os != 'Linux'
@@ -39,5 +39,5 @@ jobs:
       - name: Package and smoke test
         if: runner.os == 'Linux'
         env:
-          DESKFIN_TEST_NO_SANDBOX: "1"
+          NOKTUS_TEST_NO_SANDBOX: "1"
         run: xvfb-run --auto-servernum npm run smoke:packaged

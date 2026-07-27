@@ -1,22 +1,22 @@
 {
-  "name": "deskfin",
-  "productName": "Deskfin",
+  "name": "noktus",
+  "productName": "Noktus",
   "version": "0.1.0-beta.3",
   "private": true,
   "description": "A thin Jellyfin desktop client with Web and MPV playback",
-  "author": "Deskfin contributors",
+  "author": "Noktus contributors",
   "license": "GPL-3.0-or-later",
-  "homepage": "https://github.com/jessielw/Deskfin",
+  "homepage": "https://github.com/jessielw/Noktus",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jessielw/Deskfin.git"
+    "url": "git+https://github.com/jessielw/Noktus.git"
   },
   "bugs": {
-    "url": "https://github.com/jessielw/Deskfin/issues"
+    "url": "https://github.com/jessielw/Noktus/issues"
   },
-  "deskfin": {
-    "appId": "io.github.jessielw.deskfin",
-    "executableName": "Deskfin",
+  "noktus": {
+    "appId": "io.github.jessielw.noktus",
+    "executableName": "Noktus",
     "category": "public.app-category.entertainment"
   },
   "main": "build/main/index.js",
@@ -40,7 +40,7 @@
     "presmoke:switch": "npm run build",
     "smoke:switch": "electron . --smoke-switch",
     "presmoke:server-failure": "npm run build",
-    "smoke:server-failure": "electron . --smoke-server-failure --server-url=https://deskfin-invalid.invalid",
+    "smoke:server-failure": "electron . --smoke-server-failure --server-url=https://noktus-invalid.invalid",
     "presmoke:recovery": "npm run build",
     "smoke:recovery": "node scripts/runtime-recovery-smoke.mjs",
     "presmoke:diagnostics": "npm run build",

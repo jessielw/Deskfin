@@ -24,10 +24,7 @@ import {
   supportsJellyfinWebVersion,
   supportsRuntimeTarget,
 } from "../shared/compatibility";
-import {
-  createDiagnosticsReport,
-  type DeskfinDiagnostics,
-} from "./diagnostics";
+import { createDiagnosticsReport, type NoktusDiagnostics } from "./diagnostics";
 import { installFileLogging } from "./logging";
 import {
   MpvController,
@@ -298,7 +295,7 @@ function handleFatalMainError(error: unknown): void {
         type: "error",
         title: `${APP_NAME} stopped`,
         message: `${APP_NAME} encountered an unrecoverable error.`,
-        detail: `${fatalError.message}\n\nRestart Deskfin or quit. Details were written to the local log when logging was available.`,
+        detail: `${fatalError.message}\n\nRestart Noktus or quit. Details were written to the local log when logging was available.`,
         buttons: [`Restart ${APP_NAME}`, "Quit"],
         defaultId: 0,
         cancelId: 1,
@@ -813,7 +810,7 @@ async function restoreMainWindowFromRecovery(): Promise<void> {
   if (!recovery || !serverUrl) return;
   const created = openMainWindow(recovery.windowState, false);
   if (!created) {
-    throw new Error("Deskfin could not recreate the Jellyfin window");
+    throw new Error("Noktus could not recreate the Jellyfin window");
   }
 
   await created.ready;
@@ -1409,9 +1406,9 @@ function runDiagnosticsSmoke(): void {
 
       const menu = Menu.getApplicationMenu();
       for (const id of [
-        "deskfin-about",
-        "deskfin-copy-diagnostics",
-        "deskfin-open-log-folder",
+        "noktus-about",
+        "noktus-copy-diagnostics",
+        "noktus-open-log-folder",
       ]) {
         if (!menu?.getMenuItemById(id)) {
           throw new Error(`Application menu is missing ${id}`);
@@ -1419,7 +1416,7 @@ function runDiagnosticsSmoke(): void {
       }
 
       const report = await collectDiagnostics();
-      if (!report.startsWith("Deskfin diagnostics")) {
+      if (!report.startsWith("Noktus diagnostics")) {
         throw new Error("Diagnostics report is missing its header");
       }
       for (const profile of persistedSettings.servers) {
@@ -1505,10 +1502,10 @@ function runPackagedSmoke(): void {
           `External application icon resource is missing: ${appIconPath}`,
         );
       }
-      const deskfinLicensePath = path.join(process.resourcesPath, "LICENSE");
-      if (!fs.existsSync(deskfinLicensePath)) {
+      const noktusLicensePath = path.join(process.resourcesPath, "LICENSE");
+      if (!fs.existsSync(noktusLicensePath)) {
         throw new Error(
-          `External Deskfin license is missing: ${deskfinLicensePath}`,
+          `External Noktus license is missing: ${noktusLicensePath}`,
         );
       }
 
@@ -1620,7 +1617,7 @@ async function confirmServerSwitch(): Promise<void> {
       title: "Switch Jellyfin server",
       message: "Stop the current MPV playback and switch servers?",
       detail:
-        "Deskfin will report the stopped session before opening the server.",
+        "Noktus will report the stopped session before opening the server.",
       buttons: ["Stop and switch", "Cancel"],
       defaultId: 1,
       cancelId: 1,
@@ -1869,7 +1866,7 @@ async function forgetSavedServerLogin(
     title: "Forget Jellyfin login data",
     message: `Forget login data for ${serverLabel(profile)}?`,
     detail:
-      `Deskfin will clear cookies and site storage for this server. The server will remain in your saved list.${playbackDetail}` +
+      `Noktus will clear cookies and site storage for this server. The server will remain in your saved list.${playbackDetail}` +
       sharedOriginDetail +
       "\n\nBrowser cookies may be shared more broadly by a domain, so other services on the same site may also be signed out.",
     buttons: ["Forget login data", "Cancel"],
@@ -2256,7 +2253,7 @@ async function showAboutDialog(): Promise<void> {
       `Supported Jellyfin Web: ${COMPATIBILITY.jellyfinWebMinor}.x`,
       `Supported MPV: ${COMPATIBILITY.minimumMpvVersion}+`,
       "",
-      "Deskfin does not upload telemetry or crash reports.",
+      "Noktus does not upload telemetry or crash reports.",
     ].join("\n"),
   };
   const owner = diagnosticOwner();
@@ -2319,7 +2316,7 @@ async function openLogFolder(): Promise<void> {
   const options = {
     type: "error" as const,
     title: "Could not open log folder",
-    message: "Deskfin could not open its local log folder.",
+    message: "Noktus could not open its local log folder.",
     detail: result,
   };
   const owner = diagnosticOwner();
@@ -2348,7 +2345,7 @@ async function collectDiagnostics(): Promise<string> {
   const executableName = path.basename(mpv.executable);
   const codecReport = await collectCodecReport(false);
   const activeProfile = activeServer(persistedSettings);
-  const value: DeskfinDiagnostics = {
+  const value: NoktusDiagnostics = {
     generatedAt: new Date().toISOString(),
     application: {
       name: APP_NAME,
@@ -2404,7 +2401,7 @@ async function copyDiagnostics(): Promise<void> {
   const options = {
     type: "info" as const,
     title: "Diagnostics copied",
-    message: "Deskfin diagnostics were copied to the clipboard.",
+    message: "Noktus diagnostics were copied to the clipboard.",
     detail:
       "The report excludes access tokens, server addresses, media URLs, and account details.",
   };
@@ -2479,7 +2476,7 @@ function installMenu(): void {
         },
         { type: "separator" },
         {
-          id: "deskfin-about",
+          id: "noktus-about",
           label: `About ${APP_NAME}`,
           click: () => runMenuAction("About dialog", showAboutDialog),
         },
@@ -2558,12 +2555,12 @@ function installMenu(): void {
       label: "Diagnostics",
       submenu: [
         {
-          id: "deskfin-copy-diagnostics",
+          id: "noktus-copy-diagnostics",
           label: "Copy diagnostics",
           click: () => runMenuAction("Copy diagnostics", copyDiagnostics),
         },
         {
-          id: "deskfin-open-log-folder",
+          id: "noktus-open-log-folder",
           label: "Open log folder",
           enabled: Boolean(logDirectory && logFilePath),
           click: () => runMenuAction("Open log folder", openLogFolder),

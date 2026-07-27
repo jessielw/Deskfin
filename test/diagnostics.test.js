@@ -7,7 +7,7 @@ const { createDiagnosticsReport } = require("../build/main/diagnostics");
 test("creates a support report without leaking embedded secrets", () => {
   const report = createDiagnosticsReport({
     generatedAt: "2026-07-22T12:00:00.000Z",
-    application: { name: "Deskfin", version: "test", packaged: false },
+    application: { name: "Noktus", version: "test", packaged: false },
     platform: {
       operatingSystem: "win32",
       release: "test",
@@ -41,7 +41,7 @@ test("creates a support report without leaking embedded secrets", () => {
     },
   });
 
-  assert.match(report, /Deskfin diagnostics/);
+  assert.match(report, /Noktus diagnostics/);
   assert.match(report, /"savedServerCount": 2/);
   assert.ok(!report.includes("do-not-copy"));
   assert.match(report, /api_key=\[REDACTED\]/);
