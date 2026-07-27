@@ -4,7 +4,7 @@
 
 <picture><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/jessielw/Noktus/ci.yml?style=flat&logo=github&logoColor=white&label=CI"></picture>
 
-# Why Noktus
+# Overview
 
 Noktus is an unofficial cross-platform desktop client for Jellyfin that combines
 the official Jellyfin Web interface with optional native MPV playback.
