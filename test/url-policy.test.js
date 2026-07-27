@@ -64,7 +64,7 @@ test("removes credentials and token parameters from Jellyfin page links", () => 
   const server = "https://media.example/jellyfin";
   assert.equal(
     safeJellyfinPageUrl(
-      "https://user:password@media.example/jellyfin/web/?api_key=query-secret&theme=dark#/details?id=movie-id&X-Emby-Token=hash-secret&serverId=server-id",
+      "https://user:password@media.example/jellyfin/web/?api_key=query-secret&theme=dark#/details?id=movie-id&X-Emby-Token=hash-secret&X-Emby-Authorization=hash-auth&X-MediaBrowser-Token=hash-token&serverId=server-id",
       server,
     ),
     "https://media.example/jellyfin/web/?theme=dark#/details?id=movie-id&serverId=server-id",

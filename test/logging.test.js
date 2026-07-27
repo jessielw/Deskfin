@@ -16,12 +16,24 @@ test("redacts Jellyfin tokens, authorization headers, and URL credentials", () =
     "https://media.example/Videos/1?api_key=secret-one&start=4",
     '"AccessToken":"secret-two"',
     "Authorization: Bearer secret-three",
+    'Authorization: MediaBrowser Token="secret-eight", Client="Noktus"',
     "X-Emby-Token: secret-four",
+    "X-MediaBrowser-Token: secret-six",
+    'X-Emby-Authorization: MediaBrowser Token="secret-seven"',
     "https://user:secret-five@media.example/web/",
   ].join("\n");
   const redacted = redactSensitive(source);
 
-  for (const secret of ["one", "two", "three", "four", "five"]) {
+  for (const secret of [
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+  ]) {
     assert.ok(!redacted.includes(`secret-${secret}`));
   }
   assert.match(redacted, /api_key=\[REDACTED\]/);

@@ -268,17 +268,54 @@ function installPlayer(config) {
       url.searchParams.append("includeSegmentTypes", type),
     );
 
+    function authorizationValue(value) {
+      return encodeURIComponent(String(value)).replace(
+        /[!'()*]/g,
+        (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+      );
+    }
+
+    function apiClientValue(client, names) {
+      for (const name of names) {
+        try {
+          const value = client?.[name];
+          if (typeof value === "function") {
+            const result = value.call(client);
+            if (result != null && result !== "") return String(result);
+          } else if (value != null && value !== "") {
+            return String(value);
+          }
+        } catch {
+          // A client getter is optional; continue with the standard fallback.
+        }
+      }
+      return "";
+    }
+
+    function mediaBrowserAuthorization(token) {
+      if (!token) return "";
+      const values = [
+        ["Token", token],
+        ["Client", config.appName || "Noktus"],
+        ["Version", config.appVersion || "0.0.0"],
+        ["Device", config.deviceName || "Electron"],
+      ];
+      const deviceId = apiClientValue(apiClient, ["deviceId", "getDeviceId"]);
+      if (deviceId) values.push(["DeviceId", deviceId]);
+      return `MediaBrowser ${values
+        .map(([name, value]) => `${name}="${authorizationValue(value)}"`)
+        .join(", ")}`;
+    }
+
     try {
       if (typeof apiClient.getJSON === "function") {
         return normalizeMediaSegments(await apiClient.getJSON(url.href));
       }
 
-      const headers = {};
-      const token =
-        typeof apiClient.accessToken === "function"
-          ? apiClient.accessToken()
-          : "";
-      if (token) headers["X-Emby-Token"] = token;
+      const headers = { Accept: "application/json" };
+      const token = apiClientValue(apiClient, ["accessToken"]);
+      const authorization = mediaBrowserAuthorization(token);
+      if (authorization) headers.Authorization = authorization;
       const response = await fetch(url.href, { headers });
       if (!response.ok) return [];
       return normalizeMediaSegments(await response.json());

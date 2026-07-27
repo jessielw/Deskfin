@@ -62,6 +62,7 @@ const SENSITIVE_PAGE_PARAMETER_NAMES = new Set([
   "authorization",
   "password",
   "token",
+  "xembyauthorization",
   "xembytoken",
   "xmediabrowsertoken",
 ]);

@@ -230,6 +230,80 @@ test("passes authenticated Jellyfin MediaSegments to native playback", async (t)
   listeners.get("ended")?.({});
 });
 
+test("uses one standard MediaBrowser Authorization header for fallback API calls", async (t) => {
+  const listeners = new Map();
+  let request = null;
+  const previousFetch = global.fetch;
+  global.fetch = async (url, init) => {
+    request = { url, init };
+    return {
+      ok: true,
+      async json() {
+        return { Items: [] };
+      },
+    };
+  };
+  const bridge = {
+    status: async () => ({ backend: "mpv", startFullscreen: false }),
+    on: (name, callback) => listeners.set(name, callback),
+    load: async () => true,
+    setSegments: async () => true,
+    openExternal: async () => true,
+  };
+  global.location = new URL("https://media.example/jellyfin/web/");
+  global.window = {
+    jellyfinDesktop: bridge,
+    ApiClient: {
+      deviceId: "electron-user-device",
+      accessToken: () => "secret-token",
+      getUrl(path) {
+        return `https://media.example/jellyfin/${path}`;
+      },
+    },
+  };
+  global.document = { getElementById: () => null };
+  t.after(() => {
+    global.fetch = previousFetch;
+    delete global.document;
+    delete global.location;
+    delete global.window;
+  });
+
+  installPlayer({
+    serverUrl: "https://media.example/jellyfin",
+    backend: "mpv",
+    appName: "Noktus Desktop",
+    appVersion: "1.2.3",
+    deviceName: "Electron Test",
+  });
+  const Player = await global.window.jellyfinDcMpvPlayer();
+  const player = new Player({
+    events: { trigger() {} },
+    appSettings: { get: () => 1, set() {} },
+    playbackManager: { syncPlayEnabled: false },
+  });
+
+  await player.play({
+    url: "https://media.example/jellyfin/Videos/movie-id/stream",
+    item: {
+      Id: "movie-id",
+      MediaType: "Video",
+      RunTimeTicks: 60_000_000,
+      Type: "Movie",
+    },
+    mediaSource: { MediaStreams: [] },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.ok(request);
+  assert.match(
+    request.init.headers.Authorization,
+    /^MediaBrowser Token="secret-token", Client="Noktus%20Desktop", Version="1\.2\.3", Device="Electron%20Test", DeviceId="electron-user-device"$/,
+  );
+  assert.equal(request.init.headers["X-Emby-Token"], undefined);
+  listeners.get("ended")?.({});
+});
+
 test("offers every Jellyfin external subtitle in MPV before one is selected", async (t) => {
   const listeners = new Map();
   const loads = [];

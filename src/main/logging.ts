@@ -22,11 +22,11 @@ export interface InstalledFileLogging {
 export function redactSensitive(value: string): string {
   return value
     .replace(
-      /([?&](?:api_key|apikey|access_token|accesstoken|token)=)[^&#\s"']+/gi,
+      /([?&](?:api_key|apikey|access_token|accesstoken|token|x-emby-token|x-mediabrowser-token|x-emby-authorization)=)[^&#\s"']+/gi,
       "$1[REDACTED]",
     )
     .replace(
-      /(["'](?:api_key|apikey|access_token|accesstoken|token|x-emby-token|authorization)["']\s*:\s*["'])[^"']*(["'])/gi,
+      /(["'](?:api_key|apikey|access_token|accesstoken|token|x-emby-token|x-mediabrowser-token|x-emby-authorization|authorization)["']\s*:\s*["'])[^"']*(["'])/gi,
       "$1[REDACTED]$2",
     )
     .replace(
@@ -34,15 +34,16 @@ export function redactSensitive(value: string): string {
       "$1[REDACTED]$2",
     )
     .replace(
-      /(?<!["'])\b(x-emby-token\s*:\s*["']?)[^"'\s,;}]+(["']?)/gi,
+      /(?<!["'])\b((?:x-emby-token|x-mediabrowser-token|x-emby-authorization)\s*:\s*["']?)[^"'\s,;}]+(["']?)/gi,
       "$1[REDACTED]$2",
     )
+    .replace(/\b(Token\s*=\s*)(["']?)[^"'\s,;}]+(["']?)/gi, "$1$2[REDACTED]$3")
     .replace(
       /(?<!["'])\b(api_key|apikey|access_token|accesstoken|token)\b(\s*:\s*)["']?[^"',}\s]+["']?/gi,
       "$1$2[REDACTED]",
     )
     .replace(
-      /\b(api_key|apikey|access_token|accesstoken|token)\s*=\s*[^\s&,;]+/gi,
+      /\b(api_key|apikey|access_token|accesstoken|token|x-emby-token|x-mediabrowser-token|x-emby-authorization)\s*=\s*[^\s&,;]+/gi,
       "$1=[REDACTED]",
     )
     .replace(/(https?:\/\/[^\s/:@]+:)[^\s/@]+@/gi, "$1[REDACTED]@");
