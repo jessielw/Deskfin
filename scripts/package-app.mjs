@@ -74,10 +74,20 @@ export async function packageNoktus() {
       path.join(projectRoot, "resources", "mpv"),
       path.join(projectRoot, "LICENSE"),
     ],
+    // Electron Packager copies from the repository root. Keep this list
+    // explicit for local-only material: .gitignore is not consulted here.
     ignore: [
+      /[\\/]\.git(?:[\\/]|$)/,
       /[\\/]\.agents(?:[\\/]|$)/,
       /[\\/]\.github(?:[\\/]|$)/,
+      /[\\/]\.uv-cache(?:[\\/]|$)/,
       /[\\/]\.vscode(?:[\\/]|$)/,
+      /[\\/]\.venv(?:[\\/]|$)/,
+      /[\\/]scraps(?:[\\/]|$)/,
+      /[\\/]out(?:[\\/]|$)/,
+      /[\\/]coverage(?:[\\/]|$)/,
+      /[\\/]\.cache(?:[\\/]|$)/,
+      /[\\/]__pycache__(?:[\\/]|$)/,
       /[\\/]node_modules(?:[\\/]|$)/,
       /[\\/]docs(?:[\\/]|$)/,
       /[\\/]scripts(?:[\\/]|$)/,
@@ -86,7 +96,9 @@ export async function packageNoktus() {
       /[\\/]src[\\/](?:main|preload|shared)(?:[\\/]|$)/,
       /[\\/]build[\\/]preload(?:[\\/]|$)/,
       /\.map$/,
-      /[\\/](?:README\.md|package-lock\.json|tsconfig\.json|\.gitignore|\.prettierignore|\.prettierrc)$/,
+      /[\\/]\.env(?:\.[^\\/]+)?$/,
+      /[\\/]\.npmrc$/,
+      /[\\/](?:CHANGELOG\.md|LICENSE|README\.md|package-lock\.json|tsconfig\.json|\.gitignore|\.prettierignore|\.prettierrc)$/,
     ],
   });
 }
