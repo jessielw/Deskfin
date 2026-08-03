@@ -37,6 +37,7 @@ test("migrates single-server settings into the server list", () => {
           url: "https://media.example/jellyfin",
         },
       ],
+      seriesTrackRules: [],
       activeServerId: legacyId,
       mpvPath: "C:\\tools\\mpv.exe",
     },
@@ -50,6 +51,7 @@ test("uses safe defaults for missing or unsupported settings", () => {
     startMpvFullscreen: true,
     mpvPresentation: "jellyfin",
     servers: [],
+    seriesTrackRules: [],
   });
 });
 
@@ -157,9 +159,7 @@ test("refreshing a saved server does not reorder the picker", () => {
 });
 
 test("round trips settings through the versioned JSON file", (t) => {
-  const directory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "jellyfin-dc-settings-"),
-  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jellyfin-dc-settings-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, "settings.json");
 
@@ -191,14 +191,39 @@ test("round trips settings through the versioned JSON file", (t) => {
       },
     ],
     activeServerId: "local-server",
+    seriesTrackRules: [],
   });
+});
+
+test("normalizes one named MPV profile", () => {
+  assert.equal(
+    normalizeSettings({ mpvProfile: " high-quality " }).mpvProfile,
+    "high-quality",
+  );
+  assert.equal(normalizeSettings({ mpvProfile: "bad,other" }).mpvProfile, undefined);
+});
+
+test("removing a server removes its local series track rules", () => {
+  const settings = normalizeSettings({
+    servers: [{ id: "one", name: "One", url: "https://one.example" }],
+    seriesTrackRules: [
+      {
+        serverId: "one",
+        userId: "user",
+        seriesId: "series",
+        seriesName: "Example",
+        subtitle: "off",
+        updatedAt: "2026-08-02T12:00:00.000Z",
+      },
+    ],
+  });
+  assert.equal(settings.seriesTrackRules.length, 1);
+  assert.deepEqual(removeServer(settings, "one").seriesTrackRules, []);
 });
 
 test("recovers from malformed settings without failing startup", (t) => {
   const warnings = [];
-  const directory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "jellyfin-dc-settings-"),
-  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jellyfin-dc-settings-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, "settings.json");
   fs.writeFileSync(filePath, "{invalid", "utf8");

@@ -26,11 +26,9 @@ import {
 } from "../shared/compatibility";
 import { createDiagnosticsReport, type NoktusDiagnostics } from "./diagnostics";
 import { installFileLogging } from "./logging";
-import {
-  MpvController,
-  normalizeMpvPresentation,
-} from "./playback/mpv-controller";
+import { MpvController, normalizeMpvPresentation } from "./playback/mpv-controller";
 import { inspectMpvExecutable } from "./playback/mpv-diagnostics";
+import { discoverMpvProfiles } from "./playback/mpv-profiles";
 import {
   resolveMpvExecutable,
   resolveMpvExecutableAlias,
@@ -40,14 +38,8 @@ import {
   PlaybackShutdownCoordinator,
   type PlaybackShutdownReason,
 } from "./playback/playback-shutdown";
-import {
-  validateJellyfinServer,
-  type JellyfinServerHealth,
-} from "./server-health";
-import {
-  clearServerLoginData,
-  profilesSharingOrigin,
-} from "./server-login-data";
+import { validateJellyfinServer, type JellyfinServerHealth } from "./server-health";
+import { clearServerLoginData, profilesSharingOrigin } from "./server-login-data";
 import {
   loadWindowState,
   resolveWindowState,
@@ -74,6 +66,14 @@ import {
   type RendererFailureKind,
 } from "./runtime-recovery";
 import { PRODUCT_IDENTITY } from "../shared/product";
+import { normalizeMpvProfile } from "../shared/mpv-profile";
+import {
+  findSeriesTrackRule,
+  normalizeSeriesTrackContextInput,
+  removeSeriesTrackRule,
+  resolveSeriesTracks,
+  saveSeriesTrackRule,
+} from "../shared/series-track-rules";
 import {
   activeServer,
   loadSettings,
@@ -96,6 +96,7 @@ import type {
   MpvPresentation,
   PlaybackMode,
   SaveServerRequest,
+  SeriesTrackContext,
   ServerConnectionStatus,
   ServerManagerSnapshot,
   ServerProfile,
@@ -162,6 +163,7 @@ let mpvDiagnosticCache: Promise<MpvDiagnostic> | null = null;
 let mpvIntegrationScript: string | null = null;
 let appIconPath: string | null = null;
 let mpvPresentation: MpvPresentation = "jellyfin";
+let mpvProfile: string | undefined;
 let startMpvFullscreen = true;
 let preloadPath: string | null = null;
 let settingsPagePath: string | null = null;
@@ -174,6 +176,7 @@ let logDirectory: string | null = null;
 let logFilePath: string | null = null;
 let persistedSettings: AppSettings = normalizeSettings();
 let persistedWindowState: WindowState | null = null;
+let activeSeriesTrackContext: SeriesTrackContext | null = null;
 let windowStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let resumeRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let serverStatusMessage: string | null = null;
@@ -228,6 +231,8 @@ interface SettingsSmokeReport {
   hasMpvTest: boolean;
   hasMpvDiagnostic: boolean;
   hasMpvTestBridge: boolean;
+  hasMpvProfile: boolean;
+  hasMpvProfileBridge: boolean;
   hasDiagnosticResult: boolean;
   hasSupportedResult: boolean;
   hasBridge: boolean;
@@ -383,10 +388,7 @@ function captureWindowState(window: BrowserWindow): WindowState {
 function persistMainWindowState(window: BrowserWindow): void {
   if (mainWindow !== window || window.isDestroyed() || !windowStatePath) return;
   try {
-    persistedWindowState = saveWindowState(
-      windowStatePath,
-      captureWindowState(window),
-    );
+    persistedWindowState = saveWindowState(windowStatePath, captureWindowState(window));
   } catch (error: unknown) {
     console.warn(
       `${LOG_PREFIX} Could not save window state ${windowStatePath}:`,
@@ -494,9 +496,7 @@ function currentMpvDiagnostic(force = false): Promise<MpvDiagnostic> {
       mpvExecutableResolution.executable,
       mpvExecutableResolution.source,
       {
-        configuredPathIgnored: Boolean(
-          mpvExecutableResolution.ignoredConfiguredPath,
-        ),
+        configuredPathIgnored: Boolean(mpvExecutableResolution.ignoredConfiguredPath),
       },
     );
   }
@@ -509,10 +509,17 @@ function testMpvExecutable(candidate: unknown): Promise<MpvDiagnostic> {
   }
   const executable = candidate.trim();
   if (!executable) return currentMpvDiagnostic(true);
-  return inspectMpvExecutable(
-    resolveMpvExecutableAlias(executable),
-    "settings",
-  );
+  return inspectMpvExecutable(resolveMpvExecutableAlias(executable), "settings");
+}
+
+function listMpvProfiles(candidate: unknown) {
+  if (typeof candidate !== "string") {
+    throw new Error("MPV executable path must be a string");
+  }
+  const executable = candidate.trim()
+    ? resolveMpvExecutableAlias(candidate.trim())
+    : mpvExecutableResolution.executable;
+  return discoverMpvProfiles(executable);
 }
 
 function initializeRuntime(): void {
@@ -538,8 +545,7 @@ function initializeRuntime(): void {
     commandLineOption("server-url") ||
     process.env.JELLYFIN_DC_SERVER_URL ||
     activeServer(persistedSettings)?.url;
-  const modeOverride =
-    commandLineOption("mode") || process.env.JELLYFIN_DC_MODE;
+  const modeOverride = commandLineOption("mode") || process.env.JELLYFIN_DC_MODE;
   const requestedMode = modeOverride || persistedSettings.playbackMode;
   const requestedMpvFullscreen = commandLineOption("mpv-fullscreen");
   const presentationOverride =
@@ -571,20 +577,17 @@ function initializeRuntime(): void {
     }
     currentMode = requestedMode;
     mpvPresentation = normalizeMpvPresentation(requestedMpvPresentation);
+    mpvProfile = persistedSettings.mpvProfile;
     startMpvFullscreen =
       requestedMpvFullscreen == null
         ? persistedSettings.startMpvFullscreen !== false
-        : !["0", "false", "no", "off"].includes(
-            requestedMpvFullscreen.toLowerCase(),
-          );
+        : !["0", "false", "no", "off"].includes(requestedMpvFullscreen.toLowerCase());
   } catch (error: unknown) {
     startupError = asError(error);
   }
 }
 
-async function checkJellyfinServer(
-  candidate: string,
-): Promise<JellyfinServerHealth> {
+async function checkJellyfinServer(candidate: string): Promise<JellyfinServerHealth> {
   return validateJellyfinServer(candidate, {
     fetchImpl: (input, init) => session.defaultSession.fetch(input, init),
   });
@@ -592,16 +595,16 @@ async function checkJellyfinServer(
 
 function assertTrustedSender(event: SenderEvent): void {
   const senderUrl = event.senderFrame?.url || event.sender?.getURL() || "";
-  if (
-    !isWithinServer(senderUrl, requiredPath(serverUrl, "Jellyfin server URL"))
-  ) {
-    throw new Error(
-      "The native bridge rejected a request from an untrusted page",
-    );
+  if (!isWithinServer(senderUrl, requiredPath(serverUrl, "Jellyfin server URL"))) {
+    throw new Error("The native bridge rejected a request from an untrusted page");
   }
 }
 
 function emitMpvEvent(name: MpvEventName, payload: MpvEventPayload = {}): void {
+  if ((["ended", "quit", "failed"] as MpvEventName[]).includes(name)) {
+    activeSeriesTrackContext = null;
+    installMenu();
+  }
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("jdc:mpv:event", name, payload);
   if (
@@ -614,6 +617,42 @@ function emitMpvEvent(name: MpvEventName, payload: MpvEventPayload = {}): void {
   }
 }
 
+function activeSeriesContext(value: unknown): SeriesTrackContext {
+  const profile = activeServer(persistedSettings);
+  if (!profile || !serverUrl) {
+    throw new Error("No active Jellyfin server is available");
+  }
+  return {
+    ...normalizeSeriesTrackContextInput(value),
+    serverId: profile.id,
+  };
+}
+
+async function showMpvStatusText(message: string): Promise<void> {
+  if (!mpvController?.ready) return;
+  try {
+    await mpvController.showText(message, 2200);
+  } catch (error: unknown) {
+    console.warn(`${LOG_PREFIX} Could not show MPV status text:`, errorMessage(error));
+  }
+}
+
+async function forgetCurrentSeriesTracks(): Promise<void> {
+  const context = activeSeriesTrackContext;
+  if (!context) throw new Error("No series episode is currently playing");
+  savePersistedSettings(
+    normalizeSettings({
+      ...persistedSettings,
+      seriesTrackRules: removeSeriesTrackRule(
+        persistedSettings.seriesTrackRules,
+        context,
+      ),
+    }),
+  );
+  installMenu();
+  await showMpvStatusText(`Cleared tracks for ${context.seriesName}`);
+}
+
 function createMpvController(): MpvController {
   if (mpvControllerStale && mpvController && !mpvController.current) {
     closeMpvController();
@@ -624,6 +663,7 @@ function createMpvController(): MpvController {
     executable: mpvExecutable,
     provider: mpvExecutableResolution.provider,
     presentation: mpvPresentation,
+    profile: mpvProfile,
     integrationScript: mpvIntegrationScript,
     eventSink: emitMpvEvent,
   });
@@ -632,6 +672,7 @@ function createMpvController(): MpvController {
 }
 
 function closeMpvController(): void {
+  activeSeriesTrackContext = null;
   if (!mpvController) return;
   mpvController.close();
   mpvController = null;
@@ -674,9 +715,7 @@ async function stopAndReportActivePlayback(
   return reported;
 }
 
-async function closeMainWindowAfterPlayback(
-  window: BrowserWindow,
-): Promise<void> {
+async function closeMainWindowAfterPlayback(window: BrowserWindow): Promise<void> {
   const controller = mpvController;
   try {
     await stopAndReportActivePlayback("window-close");
@@ -701,21 +740,15 @@ function assertSettingsSender(event: SenderEvent): void {
     requiredPath(settingsPagePath, "Settings page"),
   ).href;
   if (senderUrl !== expectedUrl) {
-    throw new Error(
-      "The settings bridge rejected a request from an untrusted page",
-    );
+    throw new Error("The settings bridge rejected a request from an untrusted page");
   }
 }
 
 function assertServersSender(event: SenderEvent): void {
   const senderUrl = event.senderFrame?.url || event.sender?.getURL() || "";
-  const expectedUrl = pathToFileURL(
-    requiredPath(serversPagePath, "Servers page"),
-  ).href;
+  const expectedUrl = pathToFileURL(requiredPath(serversPagePath, "Servers page")).href;
   if (senderUrl !== expectedUrl) {
-    throw new Error(
-      "The server manager rejected a request from an untrusted page",
-    );
+    throw new Error("The server manager rejected a request from an untrusted page");
   }
 }
 
@@ -725,6 +758,7 @@ async function settingsSnapshot(): Promise<SettingsSnapshot> {
     startMpvFullscreen,
     mpvPresentation,
     mpvPath: persistedSettings.mpvPath || "",
+    mpvProfile: mpvProfile || "",
     mpvDiagnostic: await currentMpvDiagnostic(),
     appVersion: app.getVersion(),
   };
@@ -754,9 +788,7 @@ function serversSnapshot(): ServerManagerSnapshot {
         serverConnectionStates.get(profile.id) || { state: "saved" },
       ]),
     ),
-    canClose: Boolean(
-      mainWindow && !mainWindow.isDestroyed() && !mainRecoveryState,
-    ),
+    canClose: Boolean(mainWindow && !mainWindow.isDestroyed() && !mainRecoveryState),
     activeServerId: persistedSettings.activeServerId,
     connectionError: connectionError || undefined,
     statusMessage: serverStatusMessage || undefined,
@@ -826,9 +858,7 @@ async function restoreMainWindowFromRecovery(): Promise<void> {
   created.window.focus();
   emitServersSnapshot();
   installMenu();
-  console.log(
-    `${LOG_PREFIX} Runtime recovery completed after ${recovery.reason}`,
-  );
+  console.log(`${LOG_PREFIX} Runtime recovery completed after ${recovery.reason}`);
 }
 
 async function retryActiveServerForRecovery(): Promise<void> {
@@ -840,10 +870,7 @@ async function retryActiveServerForRecovery(): Promise<void> {
   try {
     await activateSavedServer(profile.id);
   } catch (error: unknown) {
-    console.warn(
-      `${LOG_PREFIX} Runtime recovery check failed:`,
-      errorMessage(error),
-    );
+    console.warn(`${LOG_PREFIX} Runtime recovery check failed:`, errorMessage(error));
     showServersWindow();
     emitServersSnapshot();
   }
@@ -915,11 +942,7 @@ function installMainWindowRecoveryHandlers(window: BrowserWindow): void {
     "render-process-gone",
     (_event, details: RenderProcessGoneDetails) => {
       clearUnresponsiveRecoveryTimer(window);
-      if (
-        quitting ||
-        expectedRendererStops.has(window) ||
-        mainWindow !== window
-      ) {
+      if (quitting || expectedRendererStops.has(window) || mainWindow !== window) {
         return;
       }
       const detail = `Renderer exit reason: ${details.reason}; exit code: ${details.exitCode}.`;
@@ -978,9 +1001,7 @@ async function checkActiveServerAfterResume(): Promise<void> {
   const profile = activeServer(persistedSettings);
   if (!profile || quitting) return;
   const serverId = profile.id;
-  console.log(
-    `${LOG_PREFIX} Checking ${serverLabel(profile)} after system resume`,
-  );
+  console.log(`${LOG_PREFIX} Checking ${serverLabel(profile)} after system resume`);
   serverStatusMessage = `Reconnecting to ${serverLabel(profile)}...`;
   connectionError = null;
   setServerConnectionStatus(serverId, "checking");
@@ -996,10 +1017,7 @@ async function checkActiveServerAfterResume(): Promise<void> {
       break;
     } catch (error: unknown) {
       lastError = error;
-      console.warn(
-        `${LOG_PREFIX} Resume server check failed:`,
-        errorMessage(error),
-      );
+      console.warn(`${LOG_PREFIX} Resume server check failed:`, errorMessage(error));
     }
   }
   if (quitting || activeServer(persistedSettings)?.id !== serverId) return;
@@ -1024,9 +1042,7 @@ async function checkActiveServerAfterResume(): Promise<void> {
   }
 
   const nextProfile = profileFromHealth(health, profile.displayName);
-  savePersistedSettings(
-    upsertServer(persistedSettings, nextProfile, profile.id),
-  );
+  savePersistedSettings(upsertServer(persistedSettings, nextProfile, profile.id));
   if (profile.id !== nextProfile.id) serverConnectionStates.delete(profile.id);
   serverUrl = health.serverUrl;
   connectionError = null;
@@ -1062,10 +1078,7 @@ function installPowerMonitorRecovery(): void {
     resumeRecoveryTimer = setTimeout(() => {
       resumeRecoveryTimer = null;
       void checkActiveServerAfterResume().catch((error: unknown) => {
-        console.error(
-          `${LOG_PREFIX} Resume recovery failed:`,
-          errorMessage(error),
-        );
+        console.error(`${LOG_PREFIX} Resume recovery failed:`, errorMessage(error));
       });
     }, RESUME_RECOVERY_DELAY_MS);
     resumeRecoveryTimer.unref();
@@ -1098,10 +1111,8 @@ function placeAuxiliaryWindow(
 
   const bounds = window.getBounds();
   const workArea = targetDisplay.workArea;
-  const x =
-    workArea.x + Math.max(0, Math.floor((workArea.width - bounds.width) / 2));
-  const y =
-    workArea.y + Math.max(0, Math.floor((workArea.height - bounds.height) / 2));
+  const x = workArea.x + Math.max(0, Math.floor((workArea.width - bounds.width) / 2));
+  const y = workArea.y + Math.max(0, Math.floor((workArea.height - bounds.height) / 2));
   window.setPosition(x, y);
 }
 
@@ -1229,6 +1240,9 @@ function runSettingsSmoke(): void {
           hasMpvTest: Boolean(document.getElementById('test-mpv')),
           hasMpvDiagnostic: Boolean(document.getElementById('mpv-diagnostic')),
           hasMpvTestBridge: typeof window.settingsApi.testMpv === 'function',
+          hasMpvProfile: Boolean(document.getElementById('mpv-profile')),
+          hasMpvProfileBridge:
+            typeof window.settingsApi.listMpvProfiles === 'function',
           hasDiagnosticResult: typeof diagnostic?.available === 'boolean',
           hasSupportedResult: typeof diagnostic?.supported === 'boolean',
           hasBridge: typeof window.settingsApi === 'object',
@@ -1242,14 +1256,14 @@ function runSettingsSmoke(): void {
         !report.hasMpvTest ||
         !report.hasMpvDiagnostic ||
         !report.hasMpvTestBridge ||
+        !report.hasMpvProfile ||
+        !report.hasMpvProfileBridge ||
         !report.hasDiagnosticResult ||
         !report.hasSupportedResult ||
         !report.hasBridge ||
         !isPlaybackMode(report.playbackMode)
       ) {
-        throw new Error(
-          `Incomplete settings surface: ${JSON.stringify(report)}`,
-        );
+        throw new Error(`Incomplete settings surface: ${JSON.stringify(report)}`);
       }
       console.log(
         `${LOG_PREFIX} Settings-window smoke passed:`,
@@ -1285,10 +1299,7 @@ function runServerFailureSmoke(): void {
       );
       app.exit(0);
     } catch (error: unknown) {
-      console.error(
-        `${LOG_PREFIX} Invalid-server recovery smoke failed:`,
-        error,
-      );
+      console.error(`${LOG_PREFIX} Invalid-server recovery smoke failed:`, error);
       app.exit(1);
     }
   });
@@ -1381,14 +1392,9 @@ function runServersSmoke(): void {
         !report.hasServerList ||
         !report.hasServerStates
       ) {
-        throw new Error(
-          `Incomplete server manager surface: ${JSON.stringify(report)}`,
-        );
+        throw new Error(`Incomplete server manager surface: ${JSON.stringify(report)}`);
       }
-      console.log(
-        `${LOG_PREFIX} Server-manager smoke passed:`,
-        JSON.stringify(report),
-      );
+      console.log(`${LOG_PREFIX} Server-manager smoke passed:`, JSON.stringify(report));
       app.exit(0);
     } catch (error: unknown) {
       console.error(`${LOG_PREFIX} Server-manager smoke failed:`, error);
@@ -1427,9 +1433,7 @@ function runDiagnosticsSmoke(): void {
 
       clipboard.writeText(report);
       if (clipboard.readText() !== report) {
-        throw new Error(
-          "Diagnostics report did not round-trip through clipboard",
-        );
+        throw new Error("Diagnostics report did not round-trip through clipboard");
       }
 
       console.log(
@@ -1465,9 +1469,7 @@ function runPackagedSmoke(): void {
         );
       }
       if (path.basename(app.getAppPath()) !== "app.asar") {
-        throw new Error(
-          `Expected an ASAR application, got ${app.getAppPath()}`,
-        );
+        throw new Error(`Expected an ASAR application, got ${app.getAppPath()}`);
       }
       if (app.getName() !== PRODUCT_IDENTITY.name) {
         throw new Error(`Unexpected packaged product name: ${app.getName()}`);
@@ -1486,8 +1488,7 @@ function runPackagedSmoke(): void {
       if (
         !mpvIntegrationScript ||
         !fs.existsSync(mpvIntegrationScript) ||
-        path.dirname(path.dirname(mpvIntegrationScript)) !==
-          process.resourcesPath
+        path.dirname(path.dirname(mpvIntegrationScript)) !== process.resourcesPath
       ) {
         throw new Error(
           `External MPV integration resource is missing: ${mpvIntegrationScript}`,
@@ -1504,9 +1505,7 @@ function runPackagedSmoke(): void {
       }
       const noktusLicensePath = path.join(process.resourcesPath, "LICENSE");
       if (!fs.existsSync(noktusLicensePath)) {
-        throw new Error(
-          `External Noktus license is missing: ${noktusLicensePath}`,
-        );
+        throw new Error(`External Noktus license is missing: ${noktusLicensePath}`);
       }
 
       const report = (await window.webContents.executeJavaScript(`(async () => {
@@ -1570,10 +1569,7 @@ function openMainWindow(
   return created;
 }
 
-function recoverFromMainLoadFailure(
-  failedWindow: BrowserWindow,
-  error: unknown,
-): void {
+function recoverFromMainLoadFailure(failedWindow: BrowserWindow, error: unknown): void {
   console.error(`${LOG_PREFIX} Jellyfin Web load failed:`, error);
   beginMainRecovery(failedWindow, "load-failure", errorMessage(error), true);
 }
@@ -1616,8 +1612,7 @@ async function confirmServerSwitch(): Promise<void> {
       type: "warning" as const,
       title: "Switch Jellyfin server",
       message: "Stop the current MPV playback and switch servers?",
-      detail:
-        "Noktus will report the stopped session before opening the server.",
+      detail: "Noktus will report the stopped session before opening the server.",
       buttons: ["Stop and switch", "Cancel"],
       defaultId: 1,
       cancelId: 1,
@@ -1632,8 +1627,7 @@ async function confirmServerSwitch(): Promise<void> {
 
 function scheduleActiveServerWindow(windowState: WindowState | null): void {
   setTimeout(() => {
-    const oldWindow =
-      mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const oldWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
     closeMpvController();
     const created = openMainWindow(windowState);
     if (!created) {
@@ -1652,8 +1646,7 @@ function scheduleActiveServerWindow(windowState: WindowState | null): void {
       .then(() => {
         connectionError = null;
         serverStatusMessage = null;
-        if (serversWindow && !serversWindow.isDestroyed())
-          serversWindow.close();
+        if (serversWindow && !serversWindow.isDestroyed()) serversWindow.close();
         installMenu();
       })
       .catch(() => {
@@ -1669,8 +1662,7 @@ async function activateValidatedServer(
 ): Promise<ServerManagerSnapshot> {
   const existingActive = activeServer(persistedSettings);
   const sameServer = existingActive?.id === health.serverId;
-  const sameOpenServer =
-    Boolean(mainWindow && !mainWindow.isDestroyed()) && sameServer;
+  const sameOpenServer = Boolean(mainWindow && !mainWindow.isDestroyed()) && sameServer;
 
   if (!sameServer) await confirmServerSwitch();
   const profile = profileFromHealth(health, displayName);
@@ -1705,14 +1697,9 @@ async function activateValidatedServer(
   return serversSnapshot();
 }
 
-async function activateSavedServer(
-  serverId: string,
-): Promise<ServerManagerSnapshot> {
-  const profile = persistedSettings.servers.find(
-    (server) => server.id === serverId,
-  );
-  if (!profile)
-    throw new Error("The selected Jellyfin server no longer exists");
+async function activateSavedServer(serverId: string): Promise<ServerManagerSnapshot> {
+  const profile = persistedSettings.servers.find((server) => server.id === serverId);
+  if (!profile) throw new Error("The selected Jellyfin server no longer exists");
   serverStatusMessage = `Checking ${serverLabel(profile)}...`;
   setServerConnectionStatus(profile.id, "checking");
   connectionError = null;
@@ -1756,9 +1743,7 @@ function saveServerRequest(value: unknown): SaveServerRequest {
 async function saveServer(value: unknown): Promise<ServerManagerSnapshot> {
   const request = saveServerRequest(value);
   const editedProfile = request.replacingId
-    ? persistedSettings.servers.find(
-        (profile) => profile.id === request.replacingId,
-      )
+    ? persistedSettings.servers.find((profile) => profile.id === request.replacingId)
     : undefined;
   if (
     editedProfile &&
@@ -1766,11 +1751,7 @@ async function saveServer(value: unknown): Promise<ServerManagerSnapshot> {
     normalizeServerUrl(request.url) === editedProfile.url
   ) {
     savePersistedSettings(
-      updateServerDisplayName(
-        persistedSettings,
-        editedProfile.id,
-        request.displayName,
-      ),
+      updateServerDisplayName(persistedSettings, editedProfile.id, request.displayName),
     );
   }
   serverStatusMessage = "Checking Jellyfin server...";
@@ -1798,20 +1779,14 @@ async function saveServer(value: unknown): Promise<ServerManagerSnapshot> {
     }
     connectionError = errorMessage(error);
     if (request.replacingId) {
-      setServerConnectionStatus(
-        request.replacingId,
-        "offline",
-        connectionError,
-      );
+      setServerConnectionStatus(request.replacingId, "offline", connectionError);
     }
     emitServersSnapshot();
     throw error;
   }
 }
 
-async function removeSavedServer(
-  serverId: string,
-): Promise<ServerManagerSnapshot> {
+async function removeSavedServer(serverId: string): Promise<ServerManagerSnapshot> {
   if (!persistedSettings.servers.some((server) => server.id === serverId)) {
     throw new Error("The selected Jellyfin server no longer exists");
   }
@@ -1842,10 +1817,7 @@ async function forgetSavedServerLogin(
     throw new Error("The selected Jellyfin server no longer exists");
   }
 
-  const affectedProfiles = profilesSharingOrigin(
-    persistedSettings.servers,
-    profile,
-  );
+  const affectedProfiles = profilesSharingOrigin(persistedSettings.servers, profile);
   const activeProfile = activeServer(persistedSettings);
   const affectsActiveServer = Boolean(
     activeProfile &&
@@ -1897,12 +1869,7 @@ async function forgetSavedServerLogin(
       `${LOG_PREFIX} Cleared local Jellyfin login data for ${serverLabel(profile)}`,
     );
 
-    if (
-      affectsActiveServer &&
-      serverUrl &&
-      mainWindow &&
-      !mainWindow.isDestroyed()
-    ) {
+    if (affectsActiveServer && serverUrl && mainWindow && !mainWindow.isDestroyed()) {
       const window = mainWindow;
       try {
         await window.loadURL(`${serverUrl}/web/`);
@@ -1920,24 +1887,29 @@ async function forgetSavedServerLogin(
 
 async function applySettings(rawSettings: unknown): Promise<SettingsSnapshot> {
   const source = isRecord(rawSettings) ? rawSettings : {};
+  const requestedProfile = normalizeMpvProfile(source.mpvProfile);
   const nextSettings = normalizeSettings({
     ...persistedSettings,
     playbackMode: source.playbackMode,
     startMpvFullscreen: source.startMpvFullscreen,
     mpvPresentation: source.mpvPresentation,
     mpvPath: source.mpvPath,
+    mpvProfile: requestedProfile,
   });
   const previousMpvPath = persistedSettings.mpvPath || "";
   const previousPresentation = mpvPresentation;
+  const previousProfile = mpvProfile;
 
   savePersistedSettings(nextSettings);
   startMpvFullscreen = nextSettings.startMpvFullscreen;
   mpvPresentation = normalizeMpvPresentation(nextSettings.mpvPresentation);
+  mpvProfile = nextSettings.mpvProfile;
   refreshMpvExecutable();
 
   const mpvConfigurationChanged =
     previousMpvPath !== (nextSettings.mpvPath || "") ||
-    previousPresentation !== mpvPresentation;
+    previousPresentation !== mpvPresentation ||
+    previousProfile !== mpvProfile;
   if (mpvConfigurationChanged && mpvController) {
     if (mpvController.current) mpvControllerStale = true;
     else closeMpvController();
@@ -2004,33 +1976,37 @@ function registerIpc(): void {
       return applySettings(settings);
     },
   );
-  ipcMain.handle(
-    "jdc:settings:browse-mpv",
-    async (event: IpcMainInvokeEvent) => {
-      assertSettingsSender(event);
-      const options: OpenDialogOptions = {
-        title: "Select MPV or mpv.net executable",
-        properties: ["openFile"],
-      };
-      if (process.platform === "win32") {
-        options.filters = [
-          { name: "Applications", extensions: ["exe"] },
-          { name: "All files", extensions: ["*"] },
-        ];
-      }
-      const owner =
-        settingsWindow && !settingsWindow.isDestroyed() ? settingsWindow : null;
-      const result = owner
-        ? await dialog.showOpenDialog(owner, options)
-        : await dialog.showOpenDialog(options);
-      return result.canceled ? null : result.filePaths[0] || null;
-    },
-  );
+  ipcMain.handle("jdc:settings:browse-mpv", async (event: IpcMainInvokeEvent) => {
+    assertSettingsSender(event);
+    const options: OpenDialogOptions = {
+      title: "Select MPV or mpv.net executable",
+      properties: ["openFile"],
+    };
+    if (process.platform === "win32") {
+      options.filters = [
+        { name: "Applications", extensions: ["exe"] },
+        { name: "All files", extensions: ["*"] },
+      ];
+    }
+    const owner =
+      settingsWindow && !settingsWindow.isDestroyed() ? settingsWindow : null;
+    const result = owner
+      ? await dialog.showOpenDialog(owner, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : result.filePaths[0] || null;
+  });
   ipcMain.handle(
     "jdc:settings:test-mpv",
     (event: IpcMainInvokeEvent, candidate: unknown) => {
       assertSettingsSender(event);
       return testMpvExecutable(candidate);
+    },
+  );
+  ipcMain.handle(
+    "jdc:settings:list-mpv-profiles",
+    (event: IpcMainInvokeEvent, candidate: unknown) => {
+      assertSettingsSender(event);
+      return listMpvProfiles(candidate);
     },
   );
   ipcMain.handle("jdc:mpv:status", async (event: IpcMainInvokeEvent) => {
@@ -2054,6 +2030,62 @@ function registerIpc(): void {
       reason: status.reason || diagnostic.reason,
       startFullscreen: startMpvFullscreen,
     };
+  });
+  ipcMain.handle(
+    "jdc:series-tracks:resolve",
+    (event: IpcMainInvokeEvent, value: unknown) => {
+      assertTrustedSender(event);
+      const context = activeSeriesContext(value);
+      const resolution = resolveSeriesTracks(
+        persistedSettings.seriesTrackRules,
+        context,
+      );
+      activeSeriesTrackContext = {
+        ...context,
+        audioStreamIndex: resolution.audioStreamIndex,
+        subtitleStreamIndex: resolution.subtitleStreamIndex,
+      };
+      installMenu();
+      return resolution;
+    },
+  );
+  ipcMain.handle(
+    "jdc:series-tracks:remember",
+    async (event: IpcMainInvokeEvent, value: unknown) => {
+      assertTrustedSender(event);
+      const context = activeSeriesContext(value);
+      if (
+        !activeSeriesTrackContext ||
+        activeSeriesTrackContext.serverId !== context.serverId ||
+        activeSeriesTrackContext.userId !== context.userId ||
+        activeSeriesTrackContext.seriesId !== context.seriesId
+      ) {
+        return false;
+      }
+      const changed =
+        activeSeriesTrackContext.audioStreamIndex !== context.audioStreamIndex ||
+        activeSeriesTrackContext.subtitleStreamIndex !== context.subtitleStreamIndex;
+      activeSeriesTrackContext = context;
+      if (!changed) return false;
+      savePersistedSettings(
+        normalizeSettings({
+          ...persistedSettings,
+          seriesTrackRules: saveSeriesTrackRule(
+            persistedSettings.seriesTrackRules,
+            context,
+          ),
+        }),
+      );
+      installMenu();
+      await showMpvStatusText(`Saved tracks for ${context.seriesName}`);
+      return true;
+    },
+  );
+  ipcMain.handle("jdc:series-tracks:clear", (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    activeSeriesTrackContext = null;
+    installMenu();
+    return true;
   });
   ipcMain.handle(
     "jdc:playback-shutdown-ready",
@@ -2110,40 +2142,26 @@ function registerIpc(): void {
     async (event: IpcMainInvokeEvent, rawUrl: unknown) => {
       assertTrustedSender(event);
       if (typeof rawUrl !== "string") throw new Error("URL must be a string");
-      if (
-        !isWithinServer(rawUrl, requiredPath(serverUrl, "Jellyfin server URL"))
-      ) {
-        throw new Error(
-          "Only pages on the configured Jellyfin server may be opened",
-        );
+      if (!isWithinServer(rawUrl, requiredPath(serverUrl, "Jellyfin server URL"))) {
+        throw new Error("Only pages on the configured Jellyfin server may be opened");
       }
       await shell.openExternal(new URL(rawUrl).href);
       return true;
     },
   );
-  ipcMain.handle(
-    "jdc:play-here",
-    (event: IpcMainInvokeEvent, rawUrl: unknown) => {
-      assertTrustedSender(event);
-      if (typeof rawUrl !== "string") throw new Error("URL must be a string");
-      if (
-        !isWithinServer(rawUrl, requiredPath(serverUrl, "Jellyfin server URL"))
-      ) {
-        throw new Error(
-          "The inline playback destination is outside the Jellyfin server",
-        );
-      }
-      setTimeout(() => {
-        switchMode("web", new URL(rawUrl).href).catch((error: unknown) => {
-          console.error(
-            `${LOG_PREFIX} Could not switch to Web playback:`,
-            error,
-          );
-        });
-      }, 0);
-      return true;
-    },
-  );
+  ipcMain.handle("jdc:play-here", (event: IpcMainInvokeEvent, rawUrl: unknown) => {
+    assertTrustedSender(event);
+    if (typeof rawUrl !== "string") throw new Error("URL must be a string");
+    if (!isWithinServer(rawUrl, requiredPath(serverUrl, "Jellyfin server URL"))) {
+      throw new Error("The inline playback destination is outside the Jellyfin server");
+    }
+    setTimeout(() => {
+      switchMode("web", new URL(rawUrl).href).catch((error: unknown) => {
+        console.error(`${LOG_PREFIX} Could not switch to Web playback:`, error);
+      });
+    }, 0);
+    return true;
+  });
   ipcMain.handle("jdc:focus-app", (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
     if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -2155,12 +2173,9 @@ function registerIpc(): void {
   ipcMain.on("jdc:preload-error", (_event: IpcMainEvent, message: unknown) => {
     console.error(`${LOG_PREFIX} Preload injection failed:`, message);
   });
-  ipcMain.on(
-    "jdc:injection-status",
-    (_event: IpcMainEvent, status: unknown) => {
-      console.log(`${LOG_PREFIX} Player injection:`, JSON.stringify(status));
-    },
-  );
+  ipcMain.on("jdc:injection-status", (_event: IpcMainEvent, status: unknown) => {
+    console.log(`${LOG_PREFIX} Player injection:`, JSON.stringify(status));
+  });
 }
 
 function codecProbeSource(): string {
@@ -2200,10 +2215,7 @@ async function collectCodecReport(
       chromium: process.versions.chrome,
       ...report,
     };
-    console.log(
-      `${LOG_PREFIX} Codec report:`,
-      JSON.stringify(complete, null, 2),
-    );
+    console.log(`${LOG_PREFIX} Codec report:`, JSON.stringify(complete, null, 2));
     if (showDialog) {
       await dialog.showMessageBox(targetWindow, {
         type: "info",
@@ -2365,6 +2377,7 @@ async function collectDiagnostics(): Promise<string> {
     playback: {
       mode: currentMode,
       mpvPresentation,
+      mpvProfile: mpvProfile || null,
       startMpvFullscreen,
     },
     mpv: {
@@ -2380,15 +2393,13 @@ async function collectDiagnostics(): Promise<string> {
       savedServerCount: persistedSettings.servers.length,
       activeServerVersion: activeProfile?.version || null,
       connected: Boolean(serverUrl && mainWindow && !mainWindow.isDestroyed()),
+      seriesTrackRuleCount: persistedSettings.seriesTrackRules.length,
     },
     compatibility: {
       jellyfinWeb: `${COMPATIBILITY.jellyfinWebMinor}.x`,
       electron: COMPATIBILITY.electronVersion,
       minimumMpv: COMPATIBILITY.minimumMpvVersion,
-      runtimeTargetSupported: supportsRuntimeTarget(
-        process.platform,
-        process.arch,
-      ),
+      runtimeTargetSupported: supportsRuntimeTarget(process.platform, process.arch),
     },
     codecs: diagnosticCodecReport(codecReport),
   };
@@ -2419,6 +2430,7 @@ function switchMode(
 
   switchPromise = (async () => {
     currentMode = mode;
+    if (mode === "web") activeSeriesTrackContext = null;
     if (mode === "mpv" && serverUrl) createMpvController();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setTitle(`${APP_NAME} - ${mode.toUpperCase()}`);
@@ -2442,6 +2454,11 @@ function switchMode(
 function installMenu(): void {
   const template: MenuItemConstructorOptions[] = [];
   const hasCurrentPage = Boolean(currentJellyfinPageUrl());
+  const hasSeriesContext = Boolean(currentMode === "mpv" && activeSeriesTrackContext);
+  const hasSavedSeriesRule = Boolean(
+    activeSeriesTrackContext &&
+    findSeriesTrackRule(persistedSettings.seriesTrackRules, activeSeriesTrackContext),
+  );
   const serverItems: MenuItemConstructorOptions[] =
     persistedSettings.servers.length > 0
       ? persistedSettings.servers.map((server) => ({
@@ -2522,6 +2539,12 @@ function installMenu(): void {
             persistRuntimeSettings();
           },
         },
+        { type: "separator" },
+        {
+          label: "Forget automatically saved tracks for this series",
+          enabled: hasSeriesContext && hasSavedSeriesRule,
+          click: () => runMenuAction("Forget series tracks", forgetCurrentSeriesTracks),
+        },
       ],
     },
     {
@@ -2540,14 +2563,12 @@ function installMenu(): void {
         {
           label: "Open current page in browser",
           enabled: hasCurrentPage,
-          click: () =>
-            runMenuAction("Open current page", openCurrentJellyfinPage),
+          click: () => runMenuAction("Open current page", openCurrentJellyfinPage),
         },
         {
           label: "Copy current page link",
           enabled: hasCurrentPage,
-          click: () =>
-            runMenuAction("Copy current page link", copyCurrentJellyfinPage),
+          click: () => runMenuAction("Copy current page link", copyCurrentJellyfinPage),
         },
       ],
     },
@@ -2569,8 +2590,7 @@ function installMenu(): void {
         {
           label: "Show codec report",
           enabled: Boolean(serverUrl),
-          click: () =>
-            runMenuAction("Codec report", () => collectCodecReport(true)),
+          click: () => runMenuAction("Codec report", () => collectCodecReport(true)),
         },
       ],
     },
@@ -2579,8 +2599,7 @@ function installMenu(): void {
       submenu: [
         {
           label: "Keyboard shortcuts...",
-          click: () =>
-            runMenuAction("Keyboard shortcuts", showKeyboardShortcutsDialog),
+          click: () => runMenuAction("Keyboard shortcuts", showKeyboardShortcutsDialog),
         },
       ],
     },
@@ -2595,9 +2614,7 @@ function createWindow({
   bounds = null,
 }: CreateWindowOptions = {}): CreatedWindow {
   if (!serverUrl)
-    throw new Error(
-      "A Jellyfin server URL is required before opening the client",
-    );
+    throw new Error("A Jellyfin server URL is required before opening the client");
   if (mode === "mpv") createMpvController();
   const destination = targetUrl || `${serverUrl}/web/`;
   const preloadArguments = [
@@ -2643,9 +2660,7 @@ function createWindow({
           return;
         }
         settled = true;
-        reject(
-          new Error(`Jellyfin Web failed to load: ${code} ${description}`),
-        );
+        reject(new Error(`Jellyfin Web failed to load: ${code} ${description}`));
       },
     );
   });
@@ -2682,9 +2697,7 @@ function createWindow({
       if (!shouldRecoverMainFrameLoadFailure(code, isMainFrame, quitting)) {
         return;
       }
-      console.error(
-        `${LOG_PREFIX} Failed to load ${url}: ${code} ${description}`,
-      );
+      console.error(`${LOG_PREFIX} Failed to load ${url}: ${code} ${description}`);
       recoverFromMainLoadFailure(
         window,
         new Error(`Jellyfin Web failed to load: ${code} ${description}`),
@@ -2788,8 +2801,7 @@ app.whenReady().then(async () => {
     const candidateServerUrl = serverUrl;
     const candidateProfile = persistedSettings.servers.find(
       (profile) =>
-        normalizeServerUrl(profile.url) ===
-        normalizeServerUrl(candidateServerUrl),
+        normalizeServerUrl(profile.url) === normalizeServerUrl(candidateServerUrl),
     );
     if (candidateProfile) {
       setServerConnectionStatus(candidateProfile.id, "checking");
@@ -2800,9 +2812,7 @@ app.whenReady().then(async () => {
     serverStatusMessage = null;
     const replacingId = candidateProfile?.id;
     const profile = profileFromHealth(health, candidateProfile?.displayName);
-    savePersistedSettings(
-      upsertServer(persistedSettings, profile, replacingId),
-    );
+    savePersistedSettings(upsertServer(persistedSettings, profile, replacingId));
     if (replacingId && replacingId !== profile.id) {
       serverConnectionStates.delete(replacingId);
     }
@@ -2834,9 +2844,7 @@ app.whenReady().then(async () => {
       .then(() => switchMode(currentMode === "web" ? "mpv" : "web"))
       .then(() => {
         if (mainWindow !== initialWindow || initialWindow.isDestroyed()) {
-          throw new Error(
-            "Playback mode switch replaced the application window",
-          );
+          throw new Error("Playback mode switch replaced the application window");
         }
         console.log(
           `${LOG_PREFIX} In-place mode-switch smoke passed in ${currentMode} mode`,

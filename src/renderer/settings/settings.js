@@ -5,6 +5,10 @@ const playbackMode = document.getElementById("playback-mode");
 const mpvSettings = document.getElementById("mpv-settings");
 const mpvPath = document.getElementById("mpv-path");
 const mpvPresentation = document.getElementById("mpv-presentation");
+const mpvProfile = document.getElementById("mpv-profile");
+const mpvProfileList = document.getElementById("mpv-profile-list");
+const mpvProfileHelp = document.getElementById("mpv-profile-help");
+const discoverMpvProfiles = document.getElementById("discover-mpv-profiles");
 const mpvFullscreen = document.getElementById("mpv-fullscreen");
 const browseMpv = document.getElementById("browse-mpv");
 const testMpv = document.getElementById("test-mpv");
@@ -25,6 +29,7 @@ function setBusy(value) {
   cancel.disabled = value;
   browseMpv.disabled = value;
   testMpv.disabled = value;
+  discoverMpvProfiles.disabled = value;
 }
 
 function setStatus(message, kind = "error") {
@@ -56,8 +61,7 @@ function renderMpvDiagnostic(diagnostic) {
   if (!diagnostic) {
     mpvDiagnostic.dataset.kind = "pending";
     mpvDiagnosticTitle.textContent = "Player selection not checked";
-    mpvDiagnosticDetail.textContent =
-      "Use Check Player to verify this executable.";
+    mpvDiagnosticDetail.textContent = "Use Check Player to verify this executable.";
     return;
   }
 
@@ -87,6 +91,7 @@ async function initialize() {
     playbackMode.value = settings.playbackMode;
     mpvPath.value = settings.mpvPath || "";
     mpvPresentation.value = settings.mpvPresentation;
+    mpvProfile.value = settings.mpvProfile || "";
     mpvFullscreen.checked = settings.startMpvFullscreen;
     renderMpvDiagnostic(settings.mpvDiagnostic);
     version.textContent = `Noktus ${settings.appVersion}`;
@@ -140,6 +145,34 @@ testMpv.addEventListener("click", async () => {
   }
 });
 
+discoverMpvProfiles.addEventListener("click", async () => {
+  setStatus("Discovering MPV profiles...", "pending");
+  setBusy(true);
+  mpvProfileList.replaceChildren();
+  try {
+    const discovery = await window.settingsApi.listMpvProfiles(mpvPath.value);
+    for (const profile of discovery.profiles) {
+      const option = document.createElement("option");
+      option.value = profile.name;
+      option.label = profile.description || profile.name;
+      mpvProfileList.append(option);
+    }
+    if (discovery.profiles.length > 0) {
+      mpvProfileHelp.textContent = `${discovery.profiles.length} selectable profile${discovery.profiles.length === 1 ? "" : "s"} found. You can also enter a profile name manually.`;
+      setStatus("MPV profiles discovered.", "success");
+    } else {
+      mpvProfileHelp.textContent = `${discovery.reason}. You can still enter a profile name manually.`;
+      setStatus("No profiles were added; manual entry remains available.");
+    }
+  } catch (error) {
+    mpvProfileHelp.textContent =
+      "Profile discovery failed. You can still enter a profile name manually.";
+    setStatus(`Could not discover profiles: ${errorMessage(error)}`);
+  } finally {
+    setBusy(false);
+  }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   setStatus("Saving settings...", "pending");
@@ -149,6 +182,7 @@ form.addEventListener("submit", async (event) => {
       playbackMode: playbackMode.value,
       mpvPath: mpvPath.value,
       mpvPresentation: mpvPresentation.value,
+      mpvProfile: mpvProfile.value,
       startMpvFullscreen: mpvFullscreen.checked,
     });
     setStatus("Settings saved.", "success");

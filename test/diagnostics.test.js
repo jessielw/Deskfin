@@ -17,6 +17,7 @@ test("creates a support report without leaking embedded secrets", () => {
     playback: {
       mode: "mpv",
       mpvPresentation: "jellyfin",
+      mpvProfile: null,
       startMpvFullscreen: true,
     },
     mpv: {
@@ -32,6 +33,7 @@ test("creates a support report without leaking embedded secrets", () => {
       savedServerCount: 2,
       activeServerVersion: "10.11.0",
       connected: true,
+      seriesTrackRuleCount: 3,
     },
     compatibility: {
       jellyfinWeb: "10.11.x",

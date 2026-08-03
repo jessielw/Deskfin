@@ -1,5 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { normalizeMpvProfile } from "./mpv-profile";
+import { normalizeSeriesTrackRules } from "./series-track-rules";
 import { normalizeServerUrl } from "./url-policy";
 import type {
   AppSettings,
@@ -8,7 +10,7 @@ import type {
   ServerProfile,
 } from "./types";
 
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
 
 interface SettingsLogger {
   warn(...values: unknown[]): void;
@@ -27,9 +29,7 @@ function errorMessage(error: unknown): string {
 }
 
 function errorCode(error: unknown): string | undefined {
-  return isRecord(error) && typeof error.code === "string"
-    ? error.code
-    : undefined;
+  return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
 function defaultServerName(serverUrl: string): string {
@@ -85,18 +85,13 @@ function normalizedServers(source: Record<string, unknown>): ServerProfile[] {
 
 export function normalizeSettings(raw: unknown = {}): AppSettings {
   const source = isRecord(raw) ? raw : {};
-  const playbackMode: PlaybackMode =
-    source.playbackMode === "mpv" ? "mpv" : "web";
+  const playbackMode: PlaybackMode = source.playbackMode === "mpv" ? "mpv" : "web";
   const mpvPresentation: MpvPresentation =
     source.mpvPresentation === "user" ? "user" : "jellyfin";
   const servers = normalizedServers(source);
   const requestedActiveId =
-    typeof source.activeServerId === "string"
-      ? source.activeServerId.trim()
-      : "";
-  const activeServerId = servers.some(
-    (server) => server.id === requestedActiveId,
-  )
+    typeof source.activeServerId === "string" ? source.activeServerId.trim() : "";
+  const activeServerId = servers.some((server) => server.id === requestedActiveId)
     ? requestedActiveId
     : servers[0]?.id;
   const normalized: AppSettings = {
@@ -105,11 +100,18 @@ export function normalizeSettings(raw: unknown = {}): AppSettings {
     startMpvFullscreen: source.startMpvFullscreen !== false,
     mpvPresentation,
     servers,
+    seriesTrackRules: normalizeSeriesTrackRules(source.seriesTrackRules),
   };
 
   if (activeServerId) normalized.activeServerId = activeServerId;
   if (typeof source.mpvPath === "string" && source.mpvPath.trim()) {
     normalized.mpvPath = source.mpvPath.trim();
+  }
+  try {
+    const profile = normalizeMpvProfile(source.mpvProfile);
+    if (profile) normalized.mpvProfile = profile;
+  } catch {
+    // Invalid persisted values are ignored during recovery and migration.
   }
   return normalized;
 }
@@ -117,8 +119,7 @@ export function normalizeSettings(raw: unknown = {}): AppSettings {
 export function activeServer(settings: AppSettings): ServerProfile | null {
   if (!settings.activeServerId) return null;
   return (
-    settings.servers.find((server) => server.id === settings.activeServerId) ||
-    null
+    settings.servers.find((server) => server.id === settings.activeServerId) || null
   );
 }
 
@@ -128,8 +129,7 @@ export function upsertServer(
   replacingId?: string,
 ): AppSettings {
   const normalizedProfile = normalizeServerProfile(profile);
-  if (!normalizedProfile)
-    throw new Error("A valid Jellyfin server is required");
+  if (!normalizedProfile) throw new Error("A valid Jellyfin server is required");
   const insertionIndex = settings.servers.findIndex(
     (server) =>
       server.id === replacingId ||
@@ -143,9 +143,7 @@ export function upsertServer(
       server.url !== normalizedProfile.url,
   );
   servers.splice(
-    insertionIndex < 0
-      ? servers.length
-      : Math.min(insertionIndex, servers.length),
+    insertionIndex < 0 ? servers.length : Math.min(insertionIndex, servers.length),
     0,
     normalizedProfile,
   );
@@ -156,16 +154,19 @@ export function upsertServer(
   });
 }
 
-export function removeServer(
-  settings: AppSettings,
-  serverId: string,
-): AppSettings {
+export function removeServer(settings: AppSettings, serverId: string): AppSettings {
   const servers = settings.servers.filter((server) => server.id !== serverId);
   const activeServerId =
-    settings.activeServerId === serverId
-      ? servers[0]?.id
-      : settings.activeServerId;
-  return normalizeSettings({ ...settings, servers, activeServerId });
+    settings.activeServerId === serverId ? servers[0]?.id : settings.activeServerId;
+  const seriesTrackRules = settings.seriesTrackRules.filter(
+    (rule) => rule.serverId !== serverId,
+  );
+  return normalizeSettings({
+    ...settings,
+    servers,
+    activeServerId,
+    seriesTrackRules,
+  });
 }
 
 export function updateServerDisplayName(
@@ -189,10 +190,7 @@ export function loadSettings(
     return normalizeSettings(JSON.parse(fs.readFileSync(filePath, "utf8")));
   } catch (error: unknown) {
     if (errorCode(error) !== "ENOENT") {
-      logger.warn(
-        `[Noktus] Could not read settings ${filePath}:`,
-        errorMessage(error),
-      );
+      logger.warn(`[Noktus] Could not read settings ${filePath}:`, errorMessage(error));
     }
     return normalizeSettings();
   }
@@ -203,14 +201,10 @@ export function saveSettings(filePath: string, settings: unknown): AppSettings {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
   try {
-    fs.writeFileSync(
-      temporaryPath,
-      `${JSON.stringify(normalized, null, 2)}\n`,
-      {
-        encoding: "utf8",
-        mode: 0o600,
-      },
-    );
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(normalized, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
     fs.renameSync(temporaryPath, filePath);
   } finally {
     try {

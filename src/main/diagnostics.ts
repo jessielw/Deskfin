@@ -20,6 +20,7 @@ export interface NoktusDiagnostics {
   playback: {
     mode: string;
     mpvPresentation: string;
+    mpvProfile: string | null;
     startMpvFullscreen: boolean;
   };
   mpv: {
@@ -35,6 +36,7 @@ export interface NoktusDiagnostics {
     savedServerCount: number;
     activeServerVersion: string | null;
     connected: boolean;
+    seriesTrackRuleCount: number;
   };
   compatibility: {
     jellyfinWeb: string;
