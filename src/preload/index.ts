@@ -60,24 +60,16 @@ const eventNames = new Set<MpvEventName>([
 ]);
 const eventCallbacks = new Map<MpvEventName, Set<MpvEventCallback>>();
 
-ipcRenderer.on(
-  "jdc:mpv:event",
-  (_event, eventName: unknown, payload: unknown) => {
-    if (
-      typeof eventName !== "string" ||
-      !eventNames.has(eventName as MpvEventName)
-    ) {
-      return;
-    }
-    const callbacks = eventCallbacks.get(eventName as MpvEventName);
-    if (!callbacks) return;
-    const safePayload =
-      payload && typeof payload === "object"
-        ? (payload as MpvEventPayload)
-        : {};
-    for (const callback of callbacks) callback(safePayload);
-  },
-);
+ipcRenderer.on("jdc:mpv:event", (_event, eventName: unknown, payload: unknown) => {
+  if (typeof eventName !== "string" || !eventNames.has(eventName as MpvEventName)) {
+    return;
+  }
+  const callbacks = eventCallbacks.get(eventName as MpvEventName);
+  if (!callbacks) return;
+  const safePayload =
+    payload && typeof payload === "object" ? (payload as MpvEventPayload) : {};
+  for (const callback of callbacks) callback(safePayload);
+});
 
 const desktopBridge: DesktopBridge = {
   status: () => ipcRenderer.invoke("jdc:mpv:status"),
@@ -92,12 +84,16 @@ const desktopBridge: DesktopBridge = {
   setAudioTrack: (track) => ipcRenderer.invoke("jdc:mpv:setAudioTrack", track),
   setSubtitleTrack: (streamIndex) =>
     ipcRenderer.invoke("jdc:mpv:setSubtitleTrack", streamIndex),
-  setSegments: (segments) =>
-    ipcRenderer.invoke("jdc:mpv:setSegments", segments),
+  setSegments: (segments) => ipcRenderer.invoke("jdc:mpv:setSegments", segments),
   setNavigation: (navigation) =>
     ipcRenderer.invoke("jdc:mpv:setNavigation", navigation),
   setFullscreen: (fullscreen) =>
     ipcRenderer.invoke("jdc:mpv:setFullscreen", fullscreen),
+  resolveSeriesTracks: (context) =>
+    ipcRenderer.invoke("jdc:series-tracks:resolve", context),
+  rememberSeriesTracks: (context) =>
+    ipcRenderer.invoke("jdc:series-tracks:remember", context),
+  clearSeriesTrackContext: () => ipcRenderer.invoke("jdc:series-tracks:clear"),
   shutdownReady: (requestId) =>
     ipcRenderer.invoke("jdc:playback-shutdown-ready", requestId),
   focusApp: () => ipcRenderer.invoke("jdc:focus-app"),

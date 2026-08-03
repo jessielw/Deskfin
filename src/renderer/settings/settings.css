@@ -20,11 +20,7 @@ body {
   margin: 0;
   min-width: 420px;
   background:
-    radial-gradient(
-      circle at top right,
-      rgb(126 87 194 / 18%),
-      transparent 38%
-    ),
+    radial-gradient(circle at top right, rgb(126 87 194 / 18%), transparent 38%),
     #101116;
 }
 

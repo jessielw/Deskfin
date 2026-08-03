@@ -12,10 +12,7 @@ const {
 } = require("../build/shared/compatibility");
 
 test("keeps the compatibility contract aligned with the bundled runtime", () => {
-  assert.equal(
-    packageJson.devDependencies.electron,
-    COMPATIBILITY.electronVersion,
-  );
+  assert.equal(packageJson.devDependencies.electron, COMPATIBILITY.electronVersion);
   assert.equal(supportsElectronVersion(process.versions.electron || ""), false);
   assert.equal(supportsElectronVersion("43.1.1"), true);
   assert.equal(supportsElectronVersion("43.2.0"), false);

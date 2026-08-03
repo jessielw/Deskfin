@@ -15,10 +15,7 @@ const {
 
 test("resolves development resources from the application tree", () => {
   const appPath = path.resolve("example-app");
-  assert.equal(
-    resolvePreloadPath(appPath),
-    path.join(appPath, "dist", "preload.js"),
-  );
+  assert.equal(resolvePreloadPath(appPath), path.join(appPath, "dist", "preload.js"));
   assert.equal(
     resolveSettingsPreloadPath(appPath),
     path.join(appPath, "dist", "settings-preload.js"),

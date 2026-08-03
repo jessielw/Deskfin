@@ -22,8 +22,7 @@ test("normalizes a constrained MPV load request", () => {
         {
           jellyfinIndex: 4,
           mpvTrack: 0,
-          externalUrl:
-            "https://media.example/jellyfin/Videos/1/Subtitles/4/Stream.srt",
+          externalUrl: "https://media.example/jellyfin/Videos/1/Subtitles/4/Stream.srt",
           title: "English (SRT)",
           language: "eng",
         },
@@ -41,11 +40,7 @@ test("normalizes a constrained MPV load request", () => {
 
 test("rejects unsafe MPV input", () => {
   assert.throws(
-    () =>
-      normalizeLoadRequest(
-        { url: "file:///etc/passwd" },
-        "https://media.example",
-      ),
+    () => normalizeLoadRequest({ url: "file:///etc/passwd" }, "https://media.example"),
     /outside/,
   );
   assert.throws(
@@ -148,9 +143,7 @@ test("adds the Jellyfin OSC preset without discarding other MPV script options",
   assert.ok(args.includes("--osc=yes"));
   assert.ok(args.includes("--osd-on-seek=msg-bar"));
   assert.ok(
-    args.some((argument) =>
-      argument.startsWith("--script-opts-append=osc-layout="),
-    ),
+    args.some((argument) => argument.startsWith("--script-opts-append=osc-layout=")),
   );
   assert.ok(args.includes("--script-opts-append=osc-timetotal=yes"));
   assert.ok(
@@ -158,8 +151,7 @@ test("adds the Jellyfin OSC preset without discarding other MPV script options",
     "skip controls should only be rendered for an active media segment",
   );
   assert.equal(
-    args.filter((argument) => argument.startsWith("--script-opts-append="))
-      .length,
+    args.filter((argument) => argument.startsWith("--script-opts-append=")).length,
     8,
   );
   assert.ok(!args.some((argument) => argument.startsWith("--script-opts=")));
@@ -167,12 +159,7 @@ test("adds the Jellyfin OSC preset without discarding other MPV script options",
 });
 
 test("uses a dedicated mpv.net process profile while retaining Noktus controls", () => {
-  const args = buildMpvArguments(
-    "test-ipc",
-    "jellyfin",
-    "jellyfin_dc.lua",
-    "mpv.net",
-  );
+  const args = buildMpvArguments("test-ipc", "jellyfin", "jellyfin_dc.lua", "mpv.net");
 
   assert.ok(args.includes("--process-instance=multi"));
   assert.ok(!args.includes("--force-window=immediate"));
@@ -186,6 +173,24 @@ test("uses a dedicated mpv.net process profile while retaining Noktus controls",
       executable: "C:\\tools\\mpvnet.exe",
     }).status().provider,
     "mpv.net",
+  );
+});
+
+test("applies one named video profile before Noktus mandatory arguments", () => {
+  const args = buildMpvArguments(
+    "test-ipc",
+    "jellyfin",
+    "jellyfin_dc.lua",
+    "mpv",
+    "high-quality",
+  );
+  const profileIndex = args.indexOf("--profile=high-quality");
+  assert.ok(profileIndex >= 0);
+  assert.ok(profileIndex < args.indexOf("--input-ipc-server=test-ipc"));
+  assert.ok(profileIndex < args.indexOf("--osc=yes"));
+  assert.throws(
+    () => buildMpvArguments("test-ipc", "jellyfin", null, "mpv", "one,two"),
+    /unsupported/,
   );
 });
 
@@ -224,12 +229,7 @@ test("falls back to the pre-0.38 loadfile arguments and remembers the capability
         -1,
         "start=12.500",
       ],
-      [
-        "loadfile",
-        "https://media.example/Videos/1/stream",
-        "replace",
-        "start=12.500",
-      ],
+      ["loadfile", "https://media.example/Videos/1/stream", "replace", "start=12.500"],
     ],
   );
 
@@ -237,14 +237,7 @@ test("falls back to the pre-0.38 loadfile arguments and remembers the capability
   await controller.loadRequest({ ...request, startSeconds: 20 });
   assert.deepEqual(
     commands.filter((command) => command[0] === "loadfile"),
-    [
-      [
-        "loadfile",
-        "https://media.example/Videos/1/stream",
-        "replace",
-        "start=20.000",
-      ],
-    ],
+    [["loadfile", "https://media.example/Videos/1/stream", "replace", "start=20.000"]],
   );
 });
 
@@ -382,8 +375,7 @@ test("loads and maps every external Jellyfin subtitle for MPV selection", async 
       {
         jellyfinIndex: 4,
         mpvTrack: 0,
-        externalUrl:
-          "https://media.example/jellyfin/Videos/1/Subtitles/4/Stream.srt",
+        externalUrl: "https://media.example/jellyfin/Videos/1/Subtitles/4/Stream.srt",
         title: "Spanish (SRT)",
         language: "spa",
       },
@@ -414,9 +406,7 @@ test("loads and maps every external Jellyfin subtitle for MPV selection", async 
   assert.ok(
     commands.some(
       (command) =>
-        command[0] === "set_property" &&
-        command[1] === "sid" &&
-        command[2] === 2,
+        command[0] === "set_property" && command[1] === "sid" && command[2] === 2,
     ),
   );
 

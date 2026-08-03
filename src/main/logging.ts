@@ -116,8 +116,7 @@ export class RotatingFileLogger {
 
     for (let index = this.maxFiles - 1; index >= 1; index -= 1) {
       const destination = `${this.filePath}.${index}`;
-      const source =
-        index === 1 ? this.filePath : `${this.filePath}.${index - 1}`;
+      const source = index === 1 ? this.filePath : `${this.filePath}.${index - 1}`;
       try {
         fs.unlinkSync(destination);
       } catch (error: unknown) {
@@ -160,9 +159,7 @@ export function installFileLogging(directory: string): InstalledFileLogging {
         logger.write(level, [message]);
       } catch (error: unknown) {
         writable = false;
-        original.error(
-          formatLogValues(["[Noktus] File logging failed:", error]),
-        );
+        original.error(formatLogValues(["[Noktus] File logging failed:", error]));
       }
     };
 

@@ -11,9 +11,7 @@ export function normalizeServerUrl(rawValue: unknown): string {
     throw new Error("Do not include credentials in the Jellyfin server URL");
   }
   if (candidate.search || candidate.hash) {
-    throw new Error(
-      "The Jellyfin server URL cannot contain a query or fragment",
-    );
+    throw new Error("The Jellyfin server URL cannot contain a query or fragment");
   }
 
   candidate.pathname = candidate.pathname
@@ -100,10 +98,7 @@ function sanitizePageHash(hash: string): string {
   return hash;
 }
 
-export function safeJellyfinPageUrl(
-  rawUrl: unknown,
-  serverUrl: string,
-): string {
+export function safeJellyfinPageUrl(rawUrl: unknown, serverUrl: string): string {
   if (typeof rawUrl !== "string" || !rawUrl) {
     throw new Error("A Jellyfin page URL is required");
   }

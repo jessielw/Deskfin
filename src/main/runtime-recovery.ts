@@ -3,8 +3,7 @@ export type MainRecoveryReason =
 
 export type RendererFailureKind = "crashed" | "unresponsive";
 
-export type RendererRecoveryAction =
-  "reload" | "switch-server" | "wait" | "quit";
+export type RendererRecoveryAction = "reload" | "switch-server" | "wait" | "quit";
 
 export interface RendererRecoveryPrompt {
   title: string;

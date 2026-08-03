@@ -39,15 +39,11 @@ function errorMessage(error: unknown): string {
 }
 
 function errorCode(error: unknown): string | undefined {
-  return isRecord(error) && typeof error.code === "string"
-    ? error.code
-    : undefined;
+  return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
 function integer(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.round(value)
-    : null;
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(value) : null;
 }
 
 function normalizeBounds(value: unknown): WindowBounds | null {
@@ -56,8 +52,7 @@ function normalizeBounds(value: unknown): WindowBounds | null {
   const y = integer(value.y);
   const width = integer(value.width);
   const height = integer(value.height);
-  if (x === null || y === null || width === null || height === null)
-    return null;
+  if (x === null || y === null || width === null || height === null) return null;
   if (width <= 0 || height <= 0) return null;
   return { x, y, width, height };
 }

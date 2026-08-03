@@ -70,8 +70,7 @@ test("uses a standard install location when MPV is not on PATH", () => {
     platform: "darwin",
     environment: { PATH: "/usr/bin" },
     commonPaths: ["/Applications/mpv.app/Contents/MacOS/mpv"],
-    pathIsFile: (candidate) =>
-      candidate === "/Applications/mpv.app/Contents/MacOS/mpv",
+    pathIsFile: (candidate) => candidate === "/Applications/mpv.app/Contents/MacOS/mpv",
   });
 
   assert.equal(result.executable, "/Applications/mpv.app/Contents/MacOS/mpv");
@@ -102,8 +101,7 @@ test("does not select Windows command scripts that cannot be spawned directly", 
     },
     commonPaths: [],
     pathIsFile: (candidate) =>
-      candidate === "C:\\Tools\\mpv.cmd" ||
-      candidate === "C:\\Tools\\mpvnet.bat",
+      candidate === "C:\\Tools\\mpv.cmd" || candidate === "C:\\Tools\\mpvnet.bat",
   });
 
   assert.equal(result.source, "unresolved");
@@ -134,8 +132,7 @@ test("prefers regular MPV over mpv.net on Windows PATH", () => {
     environment: { PATH: "C:\\mpvnet;C:\\mpv" },
     commonPaths: [],
     pathIsFile: (candidate) =>
-      candidate === "C:\\mpvnet\\mpvnet.exe" ||
-      candidate === "C:\\mpv\\mpv.exe",
+      candidate === "C:\\mpvnet\\mpvnet.exe" || candidate === "C:\\mpv\\mpv.exe",
   });
 
   assert.equal(result.executable, "C:\\mpv\\mpv.exe");

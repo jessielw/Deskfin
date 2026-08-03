@@ -15,10 +15,7 @@ test("runtime and package metadata share one stable product identity", () => {
   assert.equal(packageJson.name, PRODUCT_IDENTITY.packageName);
   assert.equal(packageJson.productName, PRODUCT_IDENTITY.name);
   assert.equal(packageJson.noktus.appId, PRODUCT_IDENTITY.appId);
-  assert.equal(
-    packageJson.noktus.executableName,
-    PRODUCT_IDENTITY.executableName,
-  );
+  assert.equal(packageJson.noktus.executableName, PRODUCT_IDENTITY.executableName);
   assert.equal(packageJson.noktus.category, PRODUCT_IDENTITY.category);
   assert.match(PRODUCT_IDENTITY.appId, /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/);
 });

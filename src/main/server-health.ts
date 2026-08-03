@@ -11,10 +11,7 @@ export interface JellyfinServerHealth {
   version: string;
 }
 
-export type FetchLike = (
-  input: string,
-  init?: RequestInit,
-) => Promise<Response>;
+export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 interface ValidationOptions {
   fetchImpl?: FetchLike;
@@ -66,11 +63,7 @@ function statusError(status: number, purpose: string): Error {
   );
 }
 
-function networkError(
-  error: unknown,
-  timeoutMs: number,
-  timedOut: boolean,
-): Error {
+function networkError(error: unknown, timeoutMs: number, timedOut: boolean): Error {
   if (
     timedOut ||
     (error instanceof DOMException && error.name === "AbortError") ||
@@ -102,15 +95,12 @@ export async function validateJellyfinServer(
   }, timeoutMs);
 
   try {
-    const infoResponse = await fetchImpl(
-      endpointUrl(serverUrl, PUBLIC_INFO_PATH),
-      {
-        method: "GET",
-        redirect: "follow",
-        signal: controller.signal,
-        headers: { Accept: "application/json" },
-      },
-    );
+    const infoResponse = await fetchImpl(endpointUrl(serverUrl, PUBLIC_INFO_PATH), {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    });
     if (!infoResponse.ok) {
       throw statusError(infoResponse.status, "server information endpoint");
     }
@@ -134,19 +124,13 @@ export async function validateJellyfinServer(
       );
     }
 
-    const canonicalServerUrl = baseFromPublicInfoUrl(
-      infoResponse.url,
-      serverUrl,
-    );
-    const webResponse = await fetchImpl(
-      endpointUrl(canonicalServerUrl, WEB_PATH),
-      {
-        method: "GET",
-        redirect: "follow",
-        signal: controller.signal,
-        headers: { Accept: "text/html" },
-      },
-    );
+    const canonicalServerUrl = baseFromPublicInfoUrl(infoResponse.url, serverUrl);
+    const webResponse = await fetchImpl(endpointUrl(canonicalServerUrl, WEB_PATH), {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { Accept: "text/html" },
+    });
     if (!webResponse.ok) {
       throw statusError(webResponse.status, "Web interface");
     }

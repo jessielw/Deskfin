@@ -65,14 +65,10 @@ test("finds the version when an executable writes other output to stdout", async
 });
 
 test("validates mpv.net with its own version format without starting playback", async () => {
-  const diagnostic = await inspectMpvExecutable(
-    "C:\\tools\\mpvnet.exe",
-    "settings",
-    {
-      platform: "win32",
-      run: async () => ({ code: 0, stdout: "mpv.net v7.1.2.0\n", stderr: "" }),
-    },
-  );
+  const diagnostic = await inspectMpvExecutable("C:\\tools\\mpvnet.exe", "settings", {
+    platform: "win32",
+    run: async () => ({ code: 0, stdout: "mpv.net v7.1.2.0\n", stderr: "" }),
+  });
 
   assert.equal(diagnostic.provider, "mpv.net");
   assert.equal(diagnostic.available, true);

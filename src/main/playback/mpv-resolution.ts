@@ -58,18 +58,9 @@ export function commonMpvPaths(
   };
 
   if (platform === "win32") {
-    append(
-      environmentValue(environment, "LOCALAPPDATA"),
-      "Programs",
-      "mpv",
-      "mpv.exe",
-    );
+    append(environmentValue(environment, "LOCALAPPDATA"), "Programs", "mpv", "mpv.exe");
     append(environmentValue(environment, "PROGRAMFILES"), "mpv", "mpv.exe");
-    append(
-      environmentValue(environment, "PROGRAMFILES(X86)"),
-      "mpv",
-      "mpv.exe",
-    );
+    append(environmentValue(environment, "PROGRAMFILES(X86)"), "mpv", "mpv.exe");
     append(
       environmentValue(environment, "USERPROFILE"),
       "scoop",
@@ -78,11 +69,7 @@ export function commonMpvPaths(
       "current",
       "mpv.exe",
     );
-    append(
-      environmentValue(environment, "CHOCOLATEYINSTALL"),
-      "bin",
-      "mpv.exe",
-    );
+    append(environmentValue(environment, "CHOCOLATEYINSTALL"), "bin", "mpv.exe");
     append(
       environmentValue(environment, "LOCALAPPDATA"),
       "Programs",
@@ -103,16 +90,8 @@ export function commonMpvPaths(
       "tools",
       "mpvnet.exe",
     );
-    append(
-      environmentValue(environment, "PROGRAMFILES"),
-      "mpv.net",
-      "mpvnet.exe",
-    );
-    append(
-      environmentValue(environment, "PROGRAMFILES(X86)"),
-      "mpv.net",
-      "mpvnet.exe",
-    );
+    append(environmentValue(environment, "PROGRAMFILES"), "mpv.net", "mpvnet.exe");
+    append(environmentValue(environment, "PROGRAMFILES(X86)"), "mpv.net", "mpvnet.exe");
     append(
       environmentValue(environment, "USERPROFILE"),
       "scoop",
@@ -129,12 +108,7 @@ export function commonMpvPaths(
       "/usr/bin/mpv",
     );
   } else {
-    paths.push(
-      "/usr/bin/mpv",
-      "/usr/local/bin/mpv",
-      "/snap/bin/mpv",
-      "/app/bin/mpv",
-    );
+    paths.push("/usr/bin/mpv", "/usr/local/bin/mpv", "/snap/bin/mpv", "/app/bin/mpv");
   }
   return [...new Set(paths)];
 }
@@ -278,9 +252,7 @@ export function resolveMpvExecutable({
     };
   }
 
-  const commonExecutable = commonPaths.find((candidate) =>
-    pathIsFile(candidate),
-  );
+  const commonExecutable = commonPaths.find((candidate) => pathIsFile(candidate));
   if (commonExecutable) {
     return {
       executable: commonExecutable,

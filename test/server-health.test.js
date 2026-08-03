@@ -4,12 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { validateJellyfinServer } = require("../build/main/server-health");
 
-function response({
-  status = 200,
-  url,
-  contentType = "application/json",
-  body = {},
-}) {
+function response({ status = 200, url, contentType = "application/json", body = {} }) {
   return {
     ok: status >= 200 && status < 300,
     status,
@@ -41,15 +36,12 @@ test("validates Jellyfin identity and its hosted Web interface", async () => {
       contentType: "text/html; charset=utf-8",
     }),
   ];
-  const health = await validateJellyfinServer(
-    "https://media.example/jellyfin/web/",
-    {
-      fetchImpl: async (url) => {
-        requests.push(url);
-        return responses.shift();
-      },
+  const health = await validateJellyfinServer("https://media.example/jellyfin/web/", {
+    fetchImpl: async (url) => {
+      requests.push(url);
+      return responses.shift();
     },
-  );
+  });
 
   assert.deepEqual(requests, [
     "https://media.example/jellyfin/System/Info/Public",
@@ -113,9 +105,7 @@ test("reports a bounded timeout for an unresponsive server", async () => {
       timeoutMs: 5,
       fetchImpl: async (_url, { signal }) =>
         new Promise((_resolve, reject) => {
-          signal.addEventListener("abort", () =>
-            reject(new Error("net::ERR_ABORTED")),
-          );
+          signal.addEventListener("abort", () => reject(new Error("net::ERR_ABORTED")));
         }),
     }),
     /did not respond within 1 seconds/,

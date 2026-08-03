@@ -6,6 +6,7 @@ const settingsBridge: SettingsBridge = {
   save: (settings) => ipcRenderer.invoke("jdc:settings:save", settings),
   browseMpv: () => ipcRenderer.invoke("jdc:settings:browse-mpv"),
   testMpv: (path) => ipcRenderer.invoke("jdc:settings:test-mpv", path),
+  listMpvProfiles: (path) => ipcRenderer.invoke("jdc:settings:list-mpv-profiles", path),
 };
 
 contextBridge.exposeInMainWorld("settingsApi", settingsBridge);

@@ -2,12 +2,7 @@ export type PlaybackMode = "web" | "mpv";
 export type MpvPresentation = "jellyfin" | "user";
 export type MpvProvider = "mpv" | "mpv.net" | "unknown";
 export type MpvExecutableSource =
-  | "command-line"
-  | "environment"
-  | "settings"
-  | "path"
-  | "common"
-  | "unresolved";
+  "command-line" | "environment" | "settings" | "path" | "common" | "unresolved";
 
 export interface MpvDiagnostic {
   available: boolean;
@@ -44,6 +39,8 @@ export interface AppSettings {
   servers: ServerProfile[];
   activeServerId?: string;
   mpvPath?: string;
+  mpvProfile?: string;
+  seriesTrackRules: SeriesTrackRule[];
 }
 
 export interface SettingsSnapshot {
@@ -51,8 +48,72 @@ export interface SettingsSnapshot {
   startMpvFullscreen: boolean;
   mpvPresentation: MpvPresentation;
   mpvPath: string;
+  mpvProfile: string;
   mpvDiagnostic: MpvDiagnostic;
   appVersion: string;
+}
+
+export interface MpvProfileSummary {
+  name: string;
+  description: string;
+}
+
+export interface MpvProfileDiscovery {
+  profiles: MpvProfileSummary[];
+  reason: string;
+}
+
+export type SeriesTrackType = "Audio" | "Subtitle";
+
+export interface SeriesTrackDescriptor {
+  index: number;
+  type: SeriesTrackType;
+  language: string;
+  title: string;
+  isDefault: boolean;
+  isForced: boolean;
+  isHearingImpaired: boolean;
+  isCommentary: boolean;
+  isExternal: boolean;
+}
+
+export interface SeriesTrackFingerprint {
+  language: string;
+  normalizedTitle: string;
+  forced: boolean;
+  hearingImpaired: boolean;
+  commentary: boolean;
+  descriptive: boolean;
+  signs: boolean;
+}
+
+export interface SeriesTrackRule {
+  serverId: string;
+  userId: string;
+  seriesId: string;
+  seriesName: string;
+  audio?: SeriesTrackFingerprint;
+  subtitle: SeriesTrackFingerprint | "off";
+  updatedAt: string;
+}
+
+export interface SeriesTrackContextInput {
+  userId: string;
+  seriesId: string;
+  seriesName: string;
+  audioStreamIndex: number;
+  subtitleStreamIndex: number;
+  tracks: SeriesTrackDescriptor[];
+}
+
+export interface SeriesTrackContext extends SeriesTrackContextInput {
+  serverId: string;
+}
+
+export interface SeriesTrackResolution {
+  audioStreamIndex: number;
+  subtitleStreamIndex: number;
+  matched: boolean;
 }
 
 export interface ServerManagerSnapshot {
@@ -90,8 +151,7 @@ export interface MpvSubtitleTrack {
   language: string;
 }
 
-export type MpvSegmentType =
-  "Intro" | "Outro" | "Recap" | "Preview" | "Commercial";
+export type MpvSegmentType = "Intro" | "Outro" | "Recap" | "Preview" | "Commercial";
 
 export interface MpvSegment {
   type: MpvSegmentType;
@@ -154,6 +214,9 @@ export interface DesktopBridge {
   setSegments(segments: unknown): Promise<boolean>;
   setNavigation(navigation: unknown): Promise<boolean>;
   setFullscreen(fullscreen: boolean): Promise<boolean>;
+  resolveSeriesTracks(context: unknown): Promise<SeriesTrackResolution>;
+  rememberSeriesTracks(context: unknown): Promise<boolean>;
+  clearSeriesTrackContext(): Promise<boolean>;
   shutdownReady(requestId: string): Promise<boolean>;
   focusApp(): Promise<boolean>;
   playHere(url: string): Promise<boolean>;
@@ -166,6 +229,7 @@ export interface SettingsBridge {
   save(settings: unknown): Promise<SettingsSnapshot>;
   browseMpv(): Promise<string | null>;
   testMpv(path: string): Promise<MpvDiagnostic>;
+  listMpvProfiles(path: string): Promise<MpvProfileDiscovery>;
 }
 
 export interface ServerManagerBridge {

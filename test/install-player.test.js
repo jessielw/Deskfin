@@ -420,6 +420,108 @@ test("offers every Jellyfin external subtitle in MPV before one is selected", as
   assert.equal(player.getSubtitleStreamIndex(), 5);
 });
 
+test("resolves preferences before load and remembers later track changes", async (t) => {
+  const listeners = new Map();
+  const loads = [];
+  const contexts = [];
+  let cleared = 0;
+  const bridge = {
+    status: async () => ({ backend: "mpv", startFullscreen: false }),
+    on: (name, callback) => listeners.set(name, callback),
+    resolveSeriesTracks: async (context) => {
+      contexts.push({ kind: "resolve", context });
+      return { audioStreamIndex: 2, subtitleStreamIndex: 4, matched: true };
+    },
+    rememberSeriesTracks: async (context) => {
+      contexts.push({ kind: "remember", context });
+      return true;
+    },
+    clearSeriesTrackContext: async () => {
+      cleared += 1;
+      return true;
+    },
+    load: async (request) => {
+      loads.push(request);
+      return true;
+    },
+    setSubtitleTrack: async () => true,
+    stop: async () => true,
+    openExternal: async () => true,
+  };
+  global.location = new URL("https://media.example/jellyfin/web/");
+  global.window = {
+    jellyfinDesktop: bridge,
+    ApiClient: {
+      getCurrentUserId: () => "user-id",
+      getUrl: (path) => `https://media.example/jellyfin/${path}`,
+      getJSON: async () => ({ Items: [] }),
+    },
+  };
+  global.document = { getElementById: () => null };
+  t.after(() => {
+    delete global.document;
+    delete global.location;
+    delete global.window;
+  });
+
+  installPlayer({
+    serverUrl: "https://media.example/jellyfin",
+    backend: "mpv",
+    appName: "Noktus",
+    appVersion: "test",
+    deviceName: "test",
+  });
+  const Player = await global.window.jellyfinDcMpvPlayer();
+  const player = new Player({
+    events: { trigger() {} },
+    appSettings: { get: () => 1, set() {} },
+    playbackManager: { syncPlayEnabled: false },
+  });
+  const mediaSource = {
+    DefaultAudioStreamIndex: 1,
+    DefaultSubtitleStreamIndex: 3,
+    MediaStreams: [
+      { Index: 1, Type: "Audio", Language: "eng", DisplayTitle: "English" },
+      { Index: 2, Type: "Audio", Language: "jpn", DisplayTitle: "Japanese" },
+      { Index: 3, Type: "Subtitle", Language: "eng", DisplayTitle: "English" },
+      { Index: 4, Type: "Subtitle", Language: "spa", DisplayTitle: "Spanish" },
+    ],
+  };
+
+  await player.play({
+    url: "https://media.example/jellyfin/Videos/episode/stream",
+    item: {
+      Id: "episode",
+      Type: "Episode",
+      MediaType: "Video",
+      SeriesId: "series-id",
+      SeriesName: "Example Show",
+      RunTimeTicks: 60_000_000,
+    },
+    mediaSource,
+  });
+
+  assert.equal(contexts[0].context.userId, "user-id");
+  assert.equal(contexts[0].context.seriesId, "series-id");
+  assert.equal(loads[0].audioTrack, 2);
+  assert.equal(loads[0].subtitleStreamIndex, 4);
+  assert.equal(player.getAudioStreamIndex(), 2);
+  assert.equal(player.getSubtitleStreamIndex(), 4);
+
+  listeners.get("subtitleTrack")({ value: 2, jellyfinIndex: 4 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(contexts.length, 1);
+
+  listeners.get("loaded")();
+  player.setSubtitleStreamIndex(3);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(contexts.at(-1).kind, "remember");
+  assert.equal(contexts.at(-1).context.subtitleStreamIndex, 3);
+
+  await player.stop();
+  assert.equal(cleared, 1);
+});
+
 test("only enables MPV queue controls for explicit adjacent playlist items", async (t) => {
   const listeners = new Map();
   const navigationCalls = [];

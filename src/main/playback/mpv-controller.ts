@@ -5,6 +5,7 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { validateMediaUrl } from "../../shared/url-policy";
+import { normalizeMpvProfile } from "../../shared/mpv-profile";
 import type {
   MpvEventName,
   MpvEventPayload,
@@ -57,6 +58,7 @@ interface MpvControllerOptions {
   executable?: string;
   provider?: MpvProvider;
   presentation?: MpvPresentation;
+  profile?: string;
   integrationScript?: string | null;
   eventSink?: MpvEventSink;
 }
@@ -70,9 +72,7 @@ function errorMessage(error: unknown): string {
 }
 
 function errorCode(error: unknown): string | undefined {
-  return isRecord(error) && typeof error.code === "string"
-    ? error.code
-    : undefined;
+  return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
 function canRetryLoad(error: unknown): boolean {
@@ -194,9 +194,7 @@ const EMPTY_NAVIGATION: Readonly<MpvNavigationState> = {
   next: false,
 };
 
-export function normalizeMpvPresentation(
-  value: unknown = "jellyfin",
-): MpvPresentation {
+export function normalizeMpvPresentation(value: unknown = "jellyfin"): MpvPresentation {
   const normalized = String(value).toLowerCase();
   if (normalized !== "jellyfin" && normalized !== "user") {
     throw new Error("--mpv-ui must be either jellyfin or user");
@@ -209,12 +207,12 @@ export function buildMpvArguments(
   presentation: MpvPresentation = "jellyfin",
   integrationScript: string | null = null,
   provider: MpvProvider = "mpv",
+  profile?: string,
 ): string[] {
-  const args = [
-    "--idle=yes",
-    "--keep-open=no",
-    `--input-ipc-server=${ipcPath}`,
-  ];
+  const args: string[] = [];
+  const normalizedProfile = normalizeMpvProfile(profile);
+  if (normalizedProfile) args.push(`--profile=${normalizedProfile}`);
+  args.push("--idle=yes", "--keep-open=no", `--input-ipc-server=${ipcPath}`);
   if (provider === "mpv") {
     args.push(
       "--input-default-bindings=yes",
@@ -312,12 +310,7 @@ export function normalizeLoadRequest(
 
   return {
     url: validateMediaUrl(value.url, serverUrl),
-    startSeconds: numberInRange(
-      value.startSeconds ?? 0,
-      "startSeconds",
-      0,
-      315360000,
-    ),
+    startSeconds: numberInRange(value.startSeconds ?? 0, "startSeconds", 0, 315360000),
     title: title.slice(0, 512),
     fullscreen,
     audioTrack: trackNumber(value.audioTrack ?? 0, "audioTrack"),
@@ -356,6 +349,7 @@ export class MpvController {
   readonly executable: string;
   readonly provider: MpvProvider;
   readonly presentation: MpvPresentation;
+  readonly profile: string | undefined;
   readonly integrationScript: string | null;
   readonly eventSink: MpvEventSink;
   child: ChildProcess | null = null;
@@ -382,6 +376,7 @@ export class MpvController {
     executable = "mpv",
     provider,
     presentation = "jellyfin",
+    profile,
     integrationScript = DEFAULT_INTEGRATION_SCRIPT,
     eventSink = () => {},
   }: MpvControllerOptions) {
@@ -394,6 +389,7 @@ export class MpvController {
           ? "mpv.net"
           : "mpv";
     this.presentation = normalizeMpvPresentation(presentation);
+    this.profile = normalizeMpvProfile(profile);
     this.integrationScript = integrationScript;
     this.eventSink = eventSink;
   }
@@ -445,15 +441,14 @@ export class MpvController {
           );
 
     if (this.integrationScript && !fs.existsSync(this.integrationScript)) {
-      throw new Error(
-        `MPV integration script is missing: ${this.integrationScript}`,
-      );
+      throw new Error(`MPV integration script is missing: ${this.integrationScript}`);
     }
     const args = buildMpvArguments(
       this.ipcPath,
       this.presentation,
       this.integrationScript,
       this.provider,
+      this.profile,
     );
     const child = spawn(this.executable, args, {
       shell: false,
@@ -462,17 +457,11 @@ export class MpvController {
     });
     this.child = child;
     child.once("error", (error) => this.onProcessError(child, error));
-    child.once("exit", (code, signal) =>
-      this.onProcessExit(child, code, signal),
-    );
+    child.once("exit", (code, signal) => this.onProcessExit(child, code, signal));
 
     const deadline = Date.now() + START_TIMEOUT_MS;
     let lastConnectionError: unknown = null;
-    while (
-      Date.now() < deadline &&
-      child.exitCode == null &&
-      !this.lastProcessError
-    ) {
+    while (Date.now() < deadline && child.exitCode == null && !this.lastProcessError) {
       try {
         this.socket = await connectOnce(this.ipcPath);
         break;
@@ -495,7 +484,8 @@ export class MpvController {
         lastConnectionError ||
         earlyExit ||
         new Error("MPV did not start");
-      throw new Error(`Could not start MPV: ${errorMessage(reason)}`);
+      const profileDetail = this.profile ? ` with profile "${this.profile}"` : "";
+      throw new Error(`Could not start MPV${profileDetail}: ${errorMessage(reason)}`);
     }
 
     this.attachSocket(this.socket);
@@ -523,10 +513,7 @@ export class MpvController {
     socket.on("data", (chunk) => this.onSocketData(chunk));
     socket.on("error", (error) => {
       if (!this.closing) {
-        this.onSocketFailure(
-          socket,
-          new Error(`MPV IPC failed: ${error.message}`),
-        );
+        this.onSocketFailure(socket, new Error(`MPV IPC failed: ${error.message}`));
       }
     });
     socket.on("close", () => {
@@ -576,9 +563,7 @@ export class MpvController {
         this.pending.delete(message.request_id);
         if (message.error && message.error !== "success") {
           pending.reject(
-            new Error(
-              `MPV ${pending.commandName} command failed: ${message.error}`,
-            ),
+            new Error(`MPV ${pending.commandName} command failed: ${message.error}`),
           );
         } else {
           pending.resolve(message.data);
@@ -656,8 +641,7 @@ export class MpvController {
         fullscreen: "fullscreen",
         aid: "audioTrack",
       };
-      const event =
-        typeof message.name === "string" ? names[message.name] : null;
+      const event = typeof message.name === "string" ? names[message.name] : null;
       if (event) this.emit(event, { value: message.data });
     }
   }
@@ -723,9 +707,7 @@ export class MpvController {
           );
           knownSubtitleIds = updatedSubtitleIds;
           if (addedIds.length !== 1) {
-            console.warn(
-              "[Noktus] Could not identify an external MPV subtitle track.",
-            );
+            console.warn("[Noktus] Could not identify an external MPV subtitle track.");
             continue;
           }
           const mpvTrack = addedIds[0];
@@ -754,9 +736,7 @@ export class MpvController {
       await this.sendSegments();
       this.emit("loaded");
       if (this.presentation === "jellyfin") {
-        const message = request.title
-          ? `Jellyfin\n${request.title}`
-          : "Jellyfin";
+        const message = request.title ? `Jellyfin\n${request.title}` : "Jellyfin";
         this.command(["show-text", message, 2200]).catch((error: unknown) => {
           console.warn(
             "[Noktus] Could not show MPV playback title:",
@@ -798,6 +778,13 @@ export class MpvController {
       "jellyfin-dc-navigation",
       JSON.stringify(this.pendingNavigation),
     ]);
+  }
+
+  async showText(message: string, duration = 1800): Promise<true> {
+    const text = String(message).slice(0, 512);
+    const milliseconds = numberInRange(duration, "duration", 100, 10000);
+    await this.command(["show-text", text, milliseconds]);
+    return true;
   }
 
   command(command: MpvCommand): Promise<unknown> {
@@ -845,29 +832,13 @@ export class MpvController {
     try {
       const perFileOptions = `start=${request.startSeconds.toFixed(3)}`;
       if (this.legacyLoadfileArguments) {
-        await this.command([
-          "loadfile",
-          request.url,
-          "replace",
-          perFileOptions,
-        ]);
+        await this.command(["loadfile", request.url, "replace", perFileOptions]);
       } else {
         try {
-          await this.command([
-            "loadfile",
-            request.url,
-            "replace",
-            -1,
-            perFileOptions,
-          ]);
+          await this.command(["loadfile", request.url, "replace", -1, perFileOptions]);
         } catch (error: unknown) {
           if (!isInvalidParameterError(error)) throw error;
-          await this.command([
-            "loadfile",
-            request.url,
-            "replace",
-            perFileOptions,
-          ]);
+          await this.command(["loadfile", request.url, "replace", perFileOptions]);
           this.legacyLoadfileArguments = true;
         }
       }
@@ -910,8 +881,7 @@ export class MpvController {
       const index = streamIndex(value, "subtitleStreamIndex");
       if (this.pendingLoad) this.pendingLoad.subtitleStreamIndex = index;
       if (!this.current || !this.fileLoaded) return true;
-      const track =
-        index < 0 ? null : (this.subtitleJellyfinToMpv.get(index) ?? null);
+      const track = index < 0 ? null : (this.subtitleJellyfinToMpv.get(index) ?? null);
       if (index >= 0 && track == null) {
         throw new Error("The selected Jellyfin subtitle is unavailable in MPV");
       }

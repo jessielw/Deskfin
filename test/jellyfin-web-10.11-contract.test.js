@@ -83,9 +83,7 @@ test("exercises the native player against the Jellyfin Web 10.11 contract", asyn
     deviceName: "contract-test",
   });
   assert.equal(installation.installed, true);
-  assert.deepEqual(global.window.NativeShell.getPlugins(), [
-    "jellyfinDcMpvPlayer",
-  ]);
+  assert.deepEqual(global.window.NativeShell.getPlugins(), ["jellyfinDcMpvPlayer"]);
   assert.deepEqual(await global.window.NativeShell.AppHost.init(), {
     deviceName: "contract-test",
     appName: "Noktus",
@@ -103,10 +101,7 @@ test("exercises the native player against the Jellyfin Web 10.11 contract", asyn
   };
   assert.equal(player.canPlayItem(movie, {}), true);
   assert.equal(player.canPlayItem({ ...movie, IsLive: true }, {}), false);
-  assert.equal(
-    player.canPlayItem({ ...movie, Type: "LiveTvChannel" }, {}),
-    false,
-  );
+  assert.equal(player.canPlayItem({ ...movie, Type: "LiveTvChannel" }, {}), false);
   assert.equal(player.canPlayItem(movie, { syncPlay: true }), false);
 
   await player.play({
@@ -178,14 +173,10 @@ test("exercises the native player against the Jellyfin Web 10.11 contract", asyn
   assert.ok(
     nativeCalls.some(
       ([name, value]) =>
-        name === "navigation" &&
-        value.previous === false &&
-        value.next === false,
+        name === "navigation" && value.previous === false && value.next === false,
     ),
   );
   assert.ok(nativeCalls.some(([name]) => name === "pause"));
   assert.ok(nativeCalls.some(([name]) => name === "play"));
-  assert.ok(
-    nativeCalls.some(([name, value]) => name === "seek" && value === 15),
-  );
+  assert.ok(nativeCalls.some(([name, value]) => name === "seek" && value === 15));
 });

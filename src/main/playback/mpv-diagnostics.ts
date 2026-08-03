@@ -104,8 +104,7 @@ export async function inspectMpvExecutable(
       available: false,
       version: null,
       versionLine: null,
-      reason:
-        "Select the MPV executable (mpv, mpv.exe, mpv.com, or mpvnet.exe)",
+      reason: "Select the MPV executable (mpv, mpv.exe, mpv.com, or mpvnet.exe)",
     };
   }
   if (isChocolateyMpvNetShim(executable)) {
@@ -151,8 +150,7 @@ export async function inspectMpvExecutable(
         available: false,
         version: null,
         versionLine: null,
-        reason:
-          "The selected executable did not return a recognizable MPV version",
+        reason: "The selected executable did not return a recognizable MPV version",
       };
     }
     const versionSupported =

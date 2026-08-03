@@ -15,8 +15,8 @@
       <header>
         <h1>Settings</h1>
         <p>
-          Jellyfin Web handles your accounts and login. These preferences apply
-          to every server saved in Noktus.
+          Jellyfin Web handles your accounts and login. These preferences apply to every
+          server saved in Noktus.
         </p>
       </header>
 
@@ -36,9 +36,8 @@
             <span>
               <strong id="mpv-setup-heading">Set up native playback</strong>
               <small>
-                MPV gives Noktus broad codec support and fast direct playback.
-                Install either player, then let Noktus detect it or select the
-                executable below.
+                MPV gives Noktus broad codec support and fast direct playback. Install
+                either player, then let Noktus detect it or select the executable below.
               </small>
             </span>
             <nav aria-label="MPV downloads">
@@ -69,13 +68,11 @@
                 placeholder="mpv or mpvnet on PATH"
                 spellcheck="false"
               />
-              <button id="browse-mpv" class="secondary" type="button">
-                Browse
-              </button>
+              <button id="browse-mpv" class="secondary" type="button">Browse</button>
             </span>
             <small
-              >Leave blank for automatic detection. On Windows, Noktus checks
-              for regular MPV before mpv.net.</small
+              >Leave blank for automatic detection. On Windows, Noktus checks for
+              regular MPV before mpv.net.</small
             >
           </label>
 
@@ -84,9 +81,7 @@
               <strong id="mpv-diagnostic-title">Checking MPV...</strong>
               <small id="mpv-diagnostic-detail"></small>
             </span>
-            <button id="test-mpv" class="secondary" type="button">
-              Check Player
-            </button>
+            <button id="test-mpv" class="secondary" type="button">Check Player</button>
           </div>
 
           <label class="field" for="mpv-presentation">
@@ -97,12 +92,31 @@
             </select>
           </label>
 
+          <label class="field" for="mpv-profile">
+            <span>Video profile</span>
+            <span class="path-row">
+              <input
+                id="mpv-profile"
+                name="mpvProfile"
+                type="text"
+                list="mpv-profile-list"
+                placeholder="Use MPV defaults"
+                maxlength="128"
+                spellcheck="false"
+              />
+              <datalist id="mpv-profile-list"></datalist>
+              <button id="discover-mpv-profiles" class="secondary" type="button">
+                Discover
+              </button>
+            </span>
+            <small id="mpv-profile-help"
+              >Select a profile defined in your MPV configuration, or enter its exact
+              name. Changes apply to the next MPV session.</small
+            >
+          </label>
+
           <label class="check" for="mpv-fullscreen">
-            <input
-              id="mpv-fullscreen"
-              name="startMpvFullscreen"
-              type="checkbox"
-            />
+            <input id="mpv-fullscreen" name="startMpvFullscreen" type="checkbox" />
             <span>Start MPV fullscreen</span>
           </label>
         </section>

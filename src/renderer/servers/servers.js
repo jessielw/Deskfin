@@ -109,10 +109,7 @@ async function remove(server) {
 }
 
 async function forgetLogin(server) {
-  setStatus(
-    `Preparing to forget ${serverLabel(server)} login data...`,
-    "pending",
-  );
+  setStatus(`Preparing to forget ${serverLabel(server)} login data...`, "pending");
   setBusy(true);
   try {
     snapshot = await window.serverManagerApi.forgetLogin(server.id);

@@ -19,10 +19,7 @@ export function supportsJellyfinWebVersion(version: string): boolean {
   const parsed = numericVersion(version);
   const supported = numericVersion(`${COMPATIBILITY.jellyfinWebMinor}.0`);
   return Boolean(
-    parsed &&
-    supported &&
-    parsed[0] === supported[0] &&
-    parsed[1] === supported[1],
+    parsed && supported && parsed[0] === supported[0] && parsed[1] === supported[1],
   );
 }
 
@@ -41,10 +38,7 @@ export function supportsMpvVersion(version: string): boolean {
   return patch >= minimumPatch;
 }
 
-export function supportsRuntimeTarget(
-  platform: string,
-  architecture: string,
-): boolean {
+export function supportsRuntimeTarget(platform: string, architecture: string): boolean {
   return COMPATIBILITY.targets.some(
     (target) =>
       target.platform === platform &&

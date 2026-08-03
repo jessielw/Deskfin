@@ -13,8 +13,6 @@ export function detectMpvProvider(executable: string): MpvProvider {
   return "unknown";
 }
 
-export function isMpvProvider(
-  provider: MpvProvider,
-): provider is "mpv" | "mpv.net" {
+export function isMpvProvider(provider: MpvProvider): provider is "mpv" | "mpv.net" {
   return provider === "mpv" || provider === "mpv.net";
 }

@@ -52,10 +52,7 @@ function installPlayer(config) {
       });
     } else {
       invoke("shutdownReady", requestId).catch((error) => {
-        console.warn(
-          "[Noktus] Could not acknowledge playback shutdown:",
-          error,
-        );
+        console.warn("[Noktus] Could not acknowledge playback shutdown:", error);
       });
     }
   });
@@ -99,11 +96,7 @@ function installPlayer(config) {
 
   function isEligibleVideo(item, options, playbackManager) {
     if (state.backend !== "mpv" || item?.MediaType !== "Video") return false;
-    if (
-      !Number.isFinite(item.RunTimeTicks) ||
-      item.RunTimeTicks <= 0 ||
-      item.IsLive
-    )
+    if (!Number.isFinite(item.RunTimeTicks) || item.RunTimeTicks <= 0 || item.IsLive)
       return false;
     if (["TvChannel", "LiveTvChannel", "LiveTvProgram"].includes(item.Type))
       return false;
@@ -111,8 +104,7 @@ function installPlayer(config) {
       item.RecordingStatus || item.Status || "",
     ).toLowerCase();
     if (["inprogress", "recording"].includes(recordingStatus)) return false;
-    if (playbackManager?.syncPlayEnabled || options?.syncPlay === true)
-      return false;
+    if (playbackManager?.syncPlayEnabled || options?.syncPlay === true) return false;
     return true;
   }
 
@@ -151,8 +143,10 @@ function installPlayer(config) {
         subtitleTracks: [],
       };
     }
-    const audioIndex = source.DefaultAudioStreamIndex ?? -1;
-    const subtitleIndex = source.DefaultSubtitleStreamIndex ?? -1;
+    const audioIndex =
+      options.selectedAudioStreamIndex ?? source.DefaultAudioStreamIndex ?? -1;
+    const subtitleIndex =
+      options.selectedSubtitleStreamIndex ?? source.DefaultSubtitleStreamIndex ?? -1;
     const audio = streams.find(
       (stream) => stream.Index === audioIndex && stream.Type === "Audio",
     );
@@ -172,8 +166,7 @@ function installPlayer(config) {
       ) {
         return [];
       }
-      const external =
-        stream.IsExternal || stream.DeliveryMethod === "External";
+      const external = stream.IsExternal || stream.DeliveryMethod === "External";
       const externalUrl = external ? absolute(stream.DeliveryUrl) : null;
       if (external && !externalUrl) return [];
       const title = String(
@@ -185,9 +178,7 @@ function installPlayer(config) {
       return [
         {
           jellyfinIndex: stream.Index,
-          mpvTrack: external
-            ? 0
-            : relativeTrack(streams, stream.Index, "Subtitle"),
+          mpvTrack: external ? 0 : relativeTrack(streams, stream.Index, "Subtitle"),
           externalUrl,
           title,
           language: String(stream.Language || ""),
@@ -195,9 +186,7 @@ function installPlayer(config) {
       ];
     });
     return {
-      audioTrack: audio?.IsExternal
-        ? 0
-        : relativeTrack(streams, audioIndex, "Audio"),
+      audioTrack: audio?.IsExternal ? 0 : relativeTrack(streams, audioIndex, "Audio"),
       externalAudioUrl: audio?.IsExternal ? absolute(audio.DeliveryUrl) : null,
       subtitleStreamIndex: subtitleTracks.some(
         (track) => track.jellyfinIndex === subtitleIndex,
@@ -208,14 +197,155 @@ function installPlayer(config) {
     };
   }
 
+  function apiClientFor(item) {
+    const connectionManager = window.ConnectionManager || window.connectionManager;
+    let apiClient = null;
+    if (connectionManager?.getApiClient) {
+      try {
+        apiClient = connectionManager.getApiClient(item?.ServerId || item);
+      } catch {
+        try {
+          apiClient = connectionManager.getApiClient();
+        } catch {
+          apiClient = null;
+        }
+      }
+    }
+    return apiClient || window.ApiClient || null;
+  }
+
+  function apiClientValue(client, names) {
+    for (const name of names) {
+      try {
+        const value = client?.[name];
+        if (typeof value === "function") {
+          const result = value.call(client);
+          if (result != null && result !== "") return String(result);
+        } else if (value != null && value !== "") {
+          return String(value);
+        }
+      } catch {
+        // A client getter is optional; continue with the standard fallback.
+      }
+    }
+    return "";
+  }
+
+  async function currentUserId(item) {
+    const apiClient = apiClientFor(item);
+    if (!apiClient) return "";
+    for (const name of ["getCurrentUserId", "currentUserId", "userId"]) {
+      try {
+        const value = apiClient[name];
+        const result =
+          typeof value === "function" ? await value.call(apiClient) : value;
+        if (result != null && result !== "") return String(result);
+      } catch {
+        // Jellyfin Web client versions expose different user ID accessors.
+      }
+    }
+    return "";
+  }
+
+  function seriesTrackDescriptors(options) {
+    const streams = options.mediaSource?.MediaStreams || [];
+    return streams.flatMap((stream) => {
+      if (
+        !["Audio", "Subtitle"].includes(stream.Type) ||
+        !Number.isInteger(stream.Index) ||
+        stream.Index < 0
+      ) {
+        return [];
+      }
+      return [
+        {
+          index: stream.Index,
+          type: stream.Type,
+          language: String(stream.Language || ""),
+          title: String(
+            stream.DisplayTitle ||
+              stream.Title ||
+              stream.Language ||
+              `${stream.Type} ${stream.Index}`,
+          ),
+          isDefault: stream.IsDefault === true,
+          isForced: stream.IsForced === true,
+          isHearingImpaired: stream.IsHearingImpaired === true,
+          isCommentary: stream.IsCommentary === true,
+          isExternal:
+            stream.IsExternal === true || stream.DeliveryMethod === "External",
+        },
+      ];
+    });
+  }
+
+  function buildSeriesTrackContext(options, userId, audioIndex, subtitleIndex) {
+    const item = options.item;
+    if (
+      item?.Type !== "Episode" ||
+      !item.SeriesId ||
+      !userId ||
+      options.playMethod === "Transcode"
+    ) {
+      return null;
+    }
+    return {
+      userId,
+      seriesId: String(item.SeriesId),
+      seriesName: String(item.SeriesName || item.Name || "Series"),
+      audioStreamIndex: Number(audioIndex),
+      subtitleStreamIndex: Number(subtitleIndex),
+      tracks: seriesTrackDescriptors(options),
+    };
+  }
+
+  async function resolveSeriesTrackSelection(options) {
+    const source = options.mediaSource || {};
+    const defaults = {
+      audioStreamIndex: Number(source.DefaultAudioStreamIndex ?? -1),
+      subtitleStreamIndex: Number(source.DefaultSubtitleStreamIndex ?? -1),
+      context: null,
+    };
+    if (typeof bridge.resolveSeriesTracks !== "function") return defaults;
+    const userId = await currentUserId(options.item);
+    const context = buildSeriesTrackContext(
+      options,
+      userId,
+      defaults.audioStreamIndex,
+      defaults.subtitleStreamIndex,
+    );
+    if (!context) {
+      if (typeof bridge.clearSeriesTrackContext === "function") {
+        await invoke("clearSeriesTrackContext").catch(() => {});
+      }
+      return defaults;
+    }
+    try {
+      const resolution = await invoke("resolveSeriesTracks", context);
+      const audioStreamIndex = Number(resolution?.audioStreamIndex);
+      const subtitleStreamIndex = Number(resolution?.subtitleStreamIndex);
+      const selected = {
+        ...context,
+        audioStreamIndex: Number.isInteger(audioStreamIndex)
+          ? audioStreamIndex
+          : defaults.audioStreamIndex,
+        subtitleStreamIndex: Number.isInteger(subtitleStreamIndex)
+          ? subtitleStreamIndex
+          : defaults.subtitleStreamIndex,
+      };
+      return { ...selected, context: selected };
+    } catch (error) {
+      console.debug("[Noktus] Series track preferences unavailable:", error);
+      return defaults;
+    }
+  }
+
   function normalizeMediaSegments(payload) {
     const items = Array.isArray(payload?.Items) ? payload.Items : [];
     return items
       .map((segment) => {
         const type = String(segment?.Type || "");
-        const startTicks = Number(
-          segment?.StartTicks ?? segment?.StartPositionTicks,
-        );
+        const startTicks = Number(segment?.StartTicks ?? segment?.StartPositionTicks);
         const endTicks = Number(segment?.EndTicks ?? segment?.EndPositionTicks);
         if (
           !["Intro", "Outro"].includes(type) ||
@@ -241,21 +371,7 @@ function installPlayer(config) {
     const itemId = String(item?.Id || "");
     if (!itemId) return [];
 
-    const connectionManager =
-      window.ConnectionManager || window.connectionManager;
-    let apiClient = null;
-    if (connectionManager?.getApiClient) {
-      try {
-        apiClient = connectionManager.getApiClient(item?.ServerId || item);
-      } catch {
-        try {
-          apiClient = connectionManager.getApiClient();
-        } catch {
-          apiClient = null;
-        }
-      }
-    }
-    apiClient = apiClient || window.ApiClient || null;
+    const apiClient = apiClientFor(item);
     if (!apiClient) return [];
 
     const path = `MediaSegments/${encodeURIComponent(itemId)}`;
@@ -273,23 +389,6 @@ function installPlayer(config) {
         /[!'()*]/g,
         (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
       );
-    }
-
-    function apiClientValue(client, names) {
-      for (const name of names) {
-        try {
-          const value = client?.[name];
-          if (typeof value === "function") {
-            const result = value.call(client);
-            if (result != null && result !== "") return String(result);
-          } else if (value != null && value !== "") {
-            return String(value);
-          }
-        } catch {
-          // A client getter is optional; continue with the standard fallback.
-        }
-      }
-      return "";
     }
 
     function mediaBrowserAuthorization(token) {
@@ -418,9 +517,7 @@ function installPlayer(config) {
     const episode = Number.isInteger(item.IndexNumber)
       ? `E${String(item.IndexNumber).padStart(2, "0")}`
       : "";
-    const episodeLabel = [season + episode, item.Name]
-      .filter(Boolean)
-      .join(" · ");
+    const episodeLabel = [season + episode, item.Name].filter(Boolean).join(" · ");
     return [item.SeriesName, episodeLabel].filter(Boolean).join(" — ");
   }
 
@@ -494,10 +591,7 @@ function installPlayer(config) {
         });
         web.disabled = !itemId || typeof actions.playHere !== "function";
         browser.disabled = !itemId || typeof actions.openBrowser !== "function";
-        root.getElementById("reason").textContent = String(error).slice(
-          0,
-          1000,
-        );
+        root.getElementById("reason").textContent = String(error).slice(0, 1000);
         root.getElementById("status").textContent = failureMessage;
         button.focus();
       }
@@ -562,6 +656,8 @@ function installPlayer(config) {
       this.useFullSubtitleUrls = true;
       this._currentSrc = null;
       this._options = null;
+      this._seriesTrackContext = null;
+      this._seriesTrackPersistenceReady = false;
       this._currentTime = 0;
       this._duration = 0;
       this._paused = false;
@@ -583,9 +679,7 @@ function installPlayer(config) {
           "playlistitemmove",
           "shufflequeuemodechange",
         ]) {
-          this.events.on(this, eventName, () =>
-            this._scheduleNavigationRefresh(),
-          );
+          this.events.on(this, eventName, () => this._scheduleNavigationRefresh());
         }
       }
     }
@@ -593,6 +687,7 @@ function installPlayer(config) {
     _wireBridge() {
       bridge.on("loaded", () => {
         if (!this._currentSrc) return;
+        this._seriesTrackPersistenceReady = true;
         this._paused = false;
         this.events.trigger(this, "playing");
         this._scheduleNavigationRefresh();
@@ -631,11 +726,7 @@ function installPlayer(config) {
         this._syncNativeTrack("Audio", payload?.value),
       );
       bridge.on("subtitleTrack", (payload) =>
-        this._syncNativeTrack(
-          "Subtitle",
-          payload?.value,
-          payload?.jellyfinIndex,
-        ),
+        this._syncNativeTrack("Subtitle", payload?.value, payload?.jellyfinIndex),
       );
       bridge.on("next", () => this._changeQueueItem("nextTrack"));
       bridge.on("previous", () => this._changeQueueItem("previousTrack"));
@@ -671,15 +762,26 @@ function installPlayer(config) {
       this._currentSrc = options.url;
       this._currentTime = Number(options.playerStartPositionTicks || 0) / 10000;
       this._duration = Number(options.item?.RunTimeTicks || 0) / 10000;
-      this.audioStreamIndex =
-        options.mediaSource?.DefaultAudioStreamIndex ?? -1;
-      this.subtitleStreamIndex =
-        options.mediaSource?.DefaultSubtitleStreamIndex ?? -1;
+      this.audioStreamIndex = options.mediaSource?.DefaultAudioStreamIndex ?? -1;
+      this.subtitleStreamIndex = options.mediaSource?.DefaultSubtitleStreamIndex ?? -1;
+      this._seriesTrackContext = null;
+      this._seriesTrackPersistenceReady = false;
       this._failurePending = false;
       this._navigation = { previous: false, next: false };
       const playGeneration = ++this._playGeneration;
       const segmentsPromise = fetchMediaSegments(options.item);
       try {
+        const seriesSelection = await resolveSeriesTrackSelection(options);
+        if (
+          this._options !== options ||
+          this._playGeneration !== playGeneration ||
+          !this._currentSrc
+        ) {
+          return;
+        }
+        this.audioStreamIndex = seriesSelection.audioStreamIndex;
+        this.subtitleStreamIndex = seriesSelection.subtitleStreamIndex;
+        this._seriesTrackContext = seriesSelection.context;
         const status = await invoke("status");
         this._fullscreen = status.startFullscreen ?? state.startFullscreen;
         this._loadRequest = {
@@ -687,7 +789,11 @@ function installPlayer(config) {
           startSeconds: this._currentTime / 1000,
           title: playbackTitle(options),
           fullscreen: this._fullscreen,
-          ...selectedTracks(options),
+          ...selectedTracks({
+            ...options,
+            selectedAudioStreamIndex: this.audioStreamIndex,
+            selectedSubtitleStreamIndex: this.subtitleStreamIndex,
+          }),
         };
         await invoke("load", this._loadRequest);
         this._scheduleNavigationRefresh(options, playGeneration);
@@ -705,10 +811,7 @@ function installPlayer(config) {
             return invoke("setSegments", segments);
           })
           .catch((error) => {
-            console.debug(
-              "[Noktus] Could not pass MediaSegments to MPV:",
-              error,
-            );
+            console.debug("[Noktus] Could not pass MediaSegments to MPV:", error);
           });
       } catch (error) {
         this._queueFailure("unavailable", String(error));
@@ -721,6 +824,8 @@ function installPlayer(config) {
       const src = this._currentSrc;
       this._currentSrc = null;
       this._options = null;
+      this._seriesTrackContext = null;
+      this._seriesTrackPersistenceReady = false;
       this._loadRequest = null;
       this._failurePending = false;
       if (this._navigationTimer) clearTimeout(this._navigationTimer);
@@ -728,6 +833,9 @@ function installPlayer(config) {
       this._navigation = { previous: false, next: false };
       this._playGeneration += 1;
       if (activeMpvPlayer === this) activeMpvPlayer = null;
+      if (typeof bridge.clearSeriesTrackContext === "function") {
+        invoke("clearSeriesTrackContext").catch(() => {});
+      }
       this.events.trigger(this, "stopped", [{ src }]);
     }
 
@@ -754,10 +862,7 @@ function installPlayer(config) {
             return invoke("setNavigation", navigation);
           })
           .catch((error) => {
-            console.debug(
-              "[Noktus] Could not pass playlist state to MPV:",
-              error,
-            );
+            console.debug("[Noktus] Could not pass playlist state to MPV:", error);
           });
       }, 0);
     }
@@ -780,10 +885,7 @@ function installPlayer(config) {
         }
       } finally {
         await invoke("shutdownReady", requestId).catch((error) => {
-          console.warn(
-            "[Noktus] Could not acknowledge playback shutdown:",
-            error,
-          );
+          console.warn("[Noktus] Could not acknowledge playback shutdown:", error);
         });
       }
     }
@@ -802,11 +904,29 @@ function installPlayer(config) {
           ? explicitJellyfinIndex
           : jellyfinTrackIndex(streams, mpvIndex, type);
       if (index == null) return;
-      const field =
-        type === "Audio" ? "audioStreamIndex" : "subtitleStreamIndex";
+      const field = type === "Audio" ? "audioStreamIndex" : "subtitleStreamIndex";
       if (this[field] === index) return;
       this[field] = index;
+      this._updateSeriesTrackContext();
       this.events.trigger(this, "timeupdate");
+    }
+
+    _updateSeriesTrackContext() {
+      if (!this._seriesTrackContext) return;
+      this._seriesTrackContext = {
+        ...this._seriesTrackContext,
+        audioStreamIndex: Number(this.audioStreamIndex ?? -1),
+        subtitleStreamIndex: Number(this.subtitleStreamIndex ?? -1),
+      };
+      if (
+        !this._seriesTrackPersistenceReady ||
+        typeof bridge.rememberSeriesTracks !== "function"
+      ) {
+        return;
+      }
+      invoke("rememberSeriesTracks", this._seriesTrackContext).catch((error) =>
+        console.debug("[Noktus] Could not remember series tracks:", error),
+      );
     }
 
     _changeQueueItem(method) {
@@ -964,16 +1084,20 @@ function installPlayer(config) {
 
     setAudioStreamIndex(index) {
       const streams = this._options?.mediaSource?.MediaStreams || [];
-      this.audioStreamIndex = Number(index);
-      invoke("setAudioTrack", relativeTrack(streams, index, "Audio")).catch(
-        () => {},
-      );
+      const selectedIndex = Number(index);
+      const changed = this.audioStreamIndex !== selectedIndex;
+      this.audioStreamIndex = selectedIndex;
+      if (changed) this._updateSeriesTrackContext();
+      invoke("setAudioTrack", relativeTrack(streams, index, "Audio")).catch(() => {});
     }
     getAudioStreamIndex() {
       return this.audioStreamIndex ?? -1;
     }
     setSubtitleStreamIndex(index) {
-      this.subtitleStreamIndex = Number(index);
+      const selectedIndex = Number(index);
+      const changed = this.subtitleStreamIndex !== selectedIndex;
+      this.subtitleStreamIndex = selectedIndex;
+      if (changed) this._updateSeriesTrackContext();
       invoke("setSubtitleTrack", this.subtitleStreamIndex).catch(() => {});
     }
     getSubtitleStreamIndex() {
