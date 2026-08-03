@@ -27,9 +27,7 @@ function run(command, args) {
     child.once("exit", (code, signal) => {
       if (code === 0) resolve();
       else {
-        reject(
-          new Error(`${command} exited with ${code ?? signal ?? "unknown"}`),
-        );
+        reject(new Error(`${command} exited with ${code ?? signal ?? "unknown"}`));
       }
     });
   });
@@ -159,8 +157,7 @@ export async function makeDeb() {
     try {
       await fsp.chmod(executablePath, 0o755);
     } catch (error) {
-      if (error && typeof error === "object" && error.code === "ENOENT")
-        continue;
+      if (error && typeof error === "object" && error.code === "ENOENT") continue;
       throw error;
     }
   }
@@ -190,15 +187,7 @@ export async function makeDeb() {
     desktopFile(productName, description),
   );
   await fsp.mkdir(
-    path.join(
-      stagingDirectory,
-      "usr",
-      "share",
-      "icons",
-      "hicolor",
-      "512x512",
-      "apps",
-    ),
+    path.join(stagingDirectory, "usr", "share", "icons", "hicolor", "512x512", "apps"),
     { recursive: true },
   );
   await fsp.copyFile(

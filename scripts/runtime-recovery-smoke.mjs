@@ -7,13 +7,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SMOKE_TIMEOUT_MS = 45_000;
-const projectRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
-const userDataPath = await fs.mkdtemp(
-  path.join(os.tmpdir(), "noktus-recovery-smoke-"),
-);
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "noktus-recovery-smoke-"));
 
 const server = http.createServer((request, response) => {
   const requestPath = new URL(request.url || "/", "http://127.0.0.1").pathname;

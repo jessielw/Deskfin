@@ -22,10 +22,7 @@ export async function packageNoktus() {
     throw new Error("package.json is missing the Noktus product identity");
   }
   const electronVersion = packageJson.devDependencies?.electron;
-  if (
-    typeof electronVersion !== "string" ||
-    !/^\d+\.\d+\.\d+$/.test(electronVersion)
-  ) {
+  if (typeof electronVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(electronVersion)) {
     throw new Error("package.json must pin an exact Electron version");
   }
   if (Object.keys(packageJson.dependencies || {}).length > 0) {

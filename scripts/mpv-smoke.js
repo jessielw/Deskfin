@@ -49,18 +49,12 @@ async function main() {
       );
     }
     if (!events.some((event) => event.name === "next")) {
-      throw new Error(
-        `MPV next-item binding failed: ${JSON.stringify(events)}`,
-      );
+      throw new Error(`MPV next-item binding failed: ${JSON.stringify(events)}`);
     }
     if (!events.some((event) => event.name === "previous")) {
-      throw new Error(
-        `MPV previous-item binding failed: ${JSON.stringify(events)}`,
-      );
+      throw new Error(`MPV previous-item binding failed: ${JSON.stringify(events)}`);
     }
-    console.log(
-      `[Noktus] MPV IPC is ready via ${controller.status().executable}`,
-    );
+    console.log(`[Noktus] MPV IPC is ready via ${controller.status().executable}`);
     console.log("[Noktus] MPV fullscreen state is synchronized");
     console.log("[Noktus] MPV native OSD commands are accepted");
     console.log("[Noktus] MPV-to-Jellyfin control messages are accepted");

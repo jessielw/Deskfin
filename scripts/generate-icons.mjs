@@ -88,13 +88,9 @@ const output = new Map([
 ]);
 
 for (const [filePath, expected] of output) {
-  if (!expected)
-    throw new Error(`Could not generate ${path.basename(filePath)}`);
+  if (!expected) throw new Error(`Could not generate ${path.basename(filePath)}`);
   if (checkOnly) {
-    if (
-      !fs.existsSync(filePath) ||
-      !fs.readFileSync(filePath).equals(expected)
-    ) {
+    if (!fs.existsSync(filePath) || !fs.readFileSync(filePath).equals(expected)) {
       throw new Error(
         `${path.relative(projectRoot, filePath)} is missing or stale; run npm run assets:icons`,
       );

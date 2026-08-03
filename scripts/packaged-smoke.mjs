@@ -5,10 +5,7 @@ import { fileURLToPath } from "node:url";
 import { packageNoktus } from "./package-app.mjs";
 
 const SMOKE_TIMEOUT_MS = 45_000;
-const projectRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"),
 );
@@ -33,8 +30,7 @@ function executablePath(bundlePath) {
 
 function launchSmoke(executable, userDataPath) {
   const smokeArguments = [
-    ...(process.platform === "linux" &&
-    process.env.NOKTUS_TEST_NO_SANDBOX === "1"
+    ...(process.platform === "linux" && process.env.NOKTUS_TEST_NO_SANDBOX === "1"
       ? ["--no-sandbox"]
       : []),
     "--smoke-packaged",
@@ -59,9 +55,7 @@ function launchSmoke(executable, userDataPath) {
       if (code === 0) finish();
       else {
         finish(
-          new Error(
-            `Packaged Noktus smoke exited with ${code ?? signal ?? "unknown"}`,
-          ),
+          new Error(`Packaged Noktus smoke exited with ${code ?? signal ?? "unknown"}`),
         );
       }
     });

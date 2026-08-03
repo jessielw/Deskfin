@@ -48,9 +48,7 @@ function run(command, args) {
     child.once("exit", (code, signal) => {
       if (code === 0) resolve();
       else {
-        reject(
-          new Error(`${command} exited with ${code ?? signal ?? "unknown"}`),
-        );
+        reject(new Error(`${command} exited with ${code ?? signal ?? "unknown"}`));
       }
     });
   });
