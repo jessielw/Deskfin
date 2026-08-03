@@ -9,6 +9,11 @@ local HIDE_DURATION = 0.14
 local NAV_IDLE_OPACITY = 0.22
 local NAV_HIDE_DELAY = 2.5
 local NAV_FADE_DURATION = 0.16
+local REFERENCE_HEIGHT = 720
+local MIN_WINDOW_SCALE = 0.75
+local MAX_WINDOW_SCALE = 1.5
+local MIN_HIDPI_SCALE = 0.5
+local MAX_HIDPI_SCALE = 5
 
 local overlay = mp.create_osd_overlay('ass-events')
 overlay.z = 1000
@@ -108,6 +113,35 @@ local function combined_alpha(base_alpha, opacity)
     )
 end
 
+local function clamp(value, minimum, maximum)
+    return math.max(minimum, math.min(maximum, value))
+end
+
+local function get_ui_scale(dimensions)
+    local hidpi_scale = mp.get_property_number('display-hidpi-scale', 1)
+    if type(hidpi_scale) ~= 'number'
+        or hidpi_scale ~= hidpi_scale
+        or hidpi_scale <= 0 then
+        hidpi_scale = 1
+    end
+    hidpi_scale = clamp(
+        hidpi_scale,
+        MIN_HIDPI_SCALE,
+        MAX_HIDPI_SCALE
+    )
+
+    -- OSD dimensions are normally physical pixels. Calculate the responsive
+    -- window scale from logical pixels so the OS DPI factor is not counted
+    -- twice, then restore that factor for the final ASS drawing coordinates.
+    local logical_height = dimensions.h / hidpi_scale
+    local window_scale = clamp(
+        logical_height / REFERENCE_HEIGHT,
+        MIN_WINDOW_SCALE,
+        MAX_WINDOW_SCALE
+    )
+    return window_scale * hidpi_scale
+end
+
 local function color_style(color, base_alpha, opacity)
     return string.format(
         '{\\blur0\\bord0\\shad0\\1c%s\\1a&H%02X&}',
@@ -159,7 +193,7 @@ render_overlay = function()
         return
     end
 
-    local scale = math.max(0.75, math.min(1.5, dimensions.h / 720))
+    local scale = get_ui_scale(dimensions)
     local side_margin = math.floor(38 * scale)
     local bottom_margin = math.floor(126 * scale)
     local right_video_margin = tonumber(dimensions.mr) or 0
@@ -714,6 +748,9 @@ mp.observe_property('time-pos', 'number', function(_, value)
 end)
 mp.observe_property('mouse-pos', 'native', update_hover)
 mp.observe_property('osd-dimensions', 'native', function()
+    if displayed_segment or file_active then render_overlay() end
+end)
+mp.observe_property('display-hidpi-scale', 'number', function()
     if displayed_segment or file_active then render_overlay() end
 end)
 
