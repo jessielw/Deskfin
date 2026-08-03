@@ -60,8 +60,8 @@
     "pretest": "npm run build:code",
     "test": "node --test",
     "validate": "npm run check && npm test",
-    "format": "prettier . --write",
-    "format:check": "prettier . --check"
+    "format": "prettier .github docs resources scripts src test README.md CHANGELOG.md package.json package-lock.json tsconfig.json .prettierrc --write",
+    "format:check": "prettier .github docs resources scripts src test README.md CHANGELOG.md package.json package-lock.json tsconfig.json .prettierrc --check"
   },
   "engines": {
     "node": ">=22.12.0"
